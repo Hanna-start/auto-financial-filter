@@ -1,0 +1,1 @@
+"""Data models for the financial stock filter system."""
