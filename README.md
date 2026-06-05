@@ -1,16 +1,21 @@
 # Auto Financial Filter (재무 건전성 기반 자동 종목 필터링 시스템)
 
-A comprehensive stock filtering system for Korean and US markets, as well as unlisted companies, that applies liquidity, financial health, and quality growth criteria to identify investment-worthy stocks.
+A stock filtering system for **Korean listed companies** that applies liquidity, financial health, quality-growth, and momentum criteria to identify investment-worthy stocks.
 
 > **Note**: This automated screener implements the financial filtering criteria publicly shared by the finance instructor '재무선배'. It is designed to automatically filter stocks that meet those rigorous fundamental criteria.
 
+**Status (2026-06-05)**: Korea-only. Runs on **real DART financials** via the sibling `dart-audit-extractor`'s `screener.db` (read-only) for the financial stages, and yfinance for price stages. The official entry point is **`run_listed_screener.py`**. A former synthetic/fake data path and an entirely synthetic US path were removed. Real financials are currently collected for ~65 companies (sample); expanding this is the main remaining task.
+
 ## Overview
 
-This system implements a three-stage filtering pipeline to identify financially sound and growth-oriented stocks:
+This system implements a four-stage filtering pipeline to identify financially sound and growth-oriented stocks:
 
-1. **Liquidity Filter**: Filters stocks based on trading volume and market activity
-2. **Financial Health Filter**: Evaluates debt ratio, cash flow health, and revenue growth
-3. **Quality Growth Filter**: Analyzes profitability trends and operational efficiency
+1. **Liquidity Filter**: Filters stocks based on trading volume and market activity (yfinance)
+2. **Financial Health Filter**: Evaluates debt ratio, cash flow health, and revenue growth (real DART, annual)
+3. **Quality Growth Filter**: Analyzes profitability trends and operational efficiency (real DART, annual)
+4. **Momentum Filter**: Screens on price momentum (yfinance)
+
+> The financial stages use **annual** filters (`annual_financial_filters.py`) because the real DART data is yearly. The original quarterly filters remain for reference/tests.
 
 ## Features
 
@@ -357,15 +362,15 @@ The system implements robust error handling:
 - ✅ Configuration management system (YAML/JSON support)
 - ✅ Command-line interface with comprehensive options
 - ✅ Data access layer with real and mock adapters
-- ✅ Comprehensive test suite (94 tests, property-based testing)
+- ✅ Comprehensive test suite (109 tests, property-based testing)
 - ✅ Data caching and export utilities
 - ✅ Logging and performance monitoring
 - ✅ Error handling and recovery mechanisms
-- ✅ Integration tests and performance validation
+- ✅ Real DART data path (hybrid: yfinance prices + `screener.db` financials)
 
-🎯 **System Status**: Production Ready
+🎯 **System Status**: Working prototype, Korea-only.
 
-The system is fully implemented and tested, ready for production use with Korean financial markets.
+The pipeline is implemented and the full 4-stage run is verified working on real DART data. The current limitation is **data coverage**: real financials are collected for ~65 companies so far (out of ~3,965 listed). Expanding collection (via the sibling `dart-audit-extractor`) is the main remaining task before this is broadly usable.
 
 ## Architecture
 
