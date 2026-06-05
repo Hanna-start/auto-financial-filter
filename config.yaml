@@ -7,11 +7,11 @@ trading_volume_period_days: 30       # 30-day period for average calculation
 
 # Financial health filter parameters (재무 건전성 필터 매개변수)
 max_debt_ratio_percent: 200.0        # Maximum debt ratio of 200%
-min_revenue_growth_percent: 10.0     # Minimum 10% YoY revenue growth
+min_revenue_growth_percent: 0.0      # Minimum 0% YoY revenue growth (역성장 제외)
 cash_flow_quarters: 4                # Number of quarters to analyze for cash flow
 
 # Quality growth filter parameters (품질 성장 필터 매개변수)
-min_operating_margin_percent: 10.0   # Minimum 10% operating margin
+min_operating_margin_percent: 5.0    # Minimum 5% operating margin
 profit_trend_years: 4                # Years to analyze for profit trend peak
 cogs_trend_quarters: 6               # Quarters to analyze for COGS ratio trend
 

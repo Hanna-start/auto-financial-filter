@@ -1,6 +1,11 @@
 """
-Alternative adapters for financial data when Korean libraries are not available.
-Uses yfinance and web scraping as fallback data sources.
+yfinance 기반 한국 주가 어댑터.
+
+가격/거래량(1·4단계: 유동성·모멘텀) 데이터를 yfinance에서 가져온다.
+재무(2·3단계)는 screener_db_adapter.py(실제 DART)를 쓴다.
+
+과거 이 파일에 있던 WebScrapingFinancialAdapter / AlternativeDataAccessManager는
+재무 수치를 random.uniform()으로 지어내는 가짜 생성기였으며 제거되었다.
 """
 
 from typing import List, Dict, Any, Optional
@@ -8,10 +13,6 @@ import pandas as pd
 from datetime import datetime, timedelta
 import time
 import logging
-import requests
-from bs4 import BeautifulSoup
-import json
-import random
 
 from ..models.base import StockSymbol, DataSourceAdapter
 from ..config import FilterConfig
@@ -136,167 +137,3 @@ class YFinanceKoreanAdapter(DataSourceAdapter):
             return df[['Close', 'Volume', 'TradingValue']].reset_index()
         
         return self._retry_with_backoff(_get_data)
-
-
-class WebScrapingFinancialAdapter(DataSourceAdapter):
-    """Alternative adapter using web scraping for financial data."""
-    
-    def __init__(self, config: FilterConfig):
-        super().__init__(config)
-        self.retry_count = 0
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
-    
-    def is_available(self) -> bool:
-        """Check if web scraping is available."""
-        return True  # Always available if requests and BeautifulSoup are installed
-    
-    def get_retry_count(self) -> int:
-        """Get the number of retry attempts for this adapter."""
-        return self.retry_count
-    
-    def _retry_with_backoff(self, func, *args, **kwargs):
-        """Execute function with retry logic and exponential backoff."""
-        last_exception = None
-        
-        for attempt in range(self.config.api_retry_attempts + 1):
-            try:
-                self.retry_count = attempt
-                return func(*args, **kwargs)
-            except Exception as e:
-                last_exception = e
-                if attempt < self.config.api_retry_attempts:
-                    wait_time = 2 ** attempt
-                    logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"All {self.config.api_retry_attempts + 1} attempts failed")
-        
-        raise last_exception
-    
-    def get_financial_statements(self, symbol: StockSymbol, quarters: int = 4) -> Dict[str, Any]:
-        """Get financial statements using realistic mock data based on symbol."""
-        def _get_statements():
-            # Generate realistic financial data based on symbol characteristics
-            base_revenue = self._get_base_revenue(symbol)
-            
-            quarterly_data = []
-            for i in range(quarters):
-                quarter_date = datetime.now() - timedelta(days=90 * i)
-                quarter_str = f"{quarter_date.year}Q{((quarter_date.month - 1) // 3) + 1}"
-                
-                # Add some variation to make data realistic
-                revenue_variation = random.uniform(0.85, 1.15)
-                profit_margin = random.uniform(0.05, 0.25)
-                
-                revenue = base_revenue * revenue_variation
-                operating_profit = revenue * profit_margin
-                total_assets = revenue * random.uniform(2.0, 4.0)
-                total_debt = total_assets * random.uniform(0.2, 0.6)
-                total_equity = total_assets - total_debt
-                operating_cash_flow = operating_profit * random.uniform(0.8, 1.2)
-                cogs = revenue * random.uniform(0.6, 0.8)
-                
-                debt_ratio = (total_debt / total_equity) * 100 if total_equity > 0 else 999.0
-                
-                quarterly_data.append({
-                    'quarter': quarter_str,
-                    'revenue': revenue,
-                    'operating_profit': operating_profit,
-                    'total_assets': total_assets,
-                    'total_debt': total_debt,
-                    'total_equity': total_equity,
-                    'operating_cash_flow': operating_cash_flow,
-                    'cogs': cogs,
-                    'debt_ratio': debt_ratio
-                })
-            
-            return {
-                'symbol': symbol.code,
-                'quarterly_data': quarterly_data
-            }
-        
-        return self._retry_with_backoff(_get_statements)
-    
-    def _get_base_revenue(self, symbol: StockSymbol) -> float:
-        """Get base revenue estimate based on symbol characteristics."""
-        # Major companies have higher revenue
-        major_companies = {
-            '005930': 80_000_000_000_000,  # Samsung Electronics
-            '000660': 15_000_000_000_000,  # SK Hynix
-            '035420': 8_000_000_000_000,   # NAVER
-            '051910': 20_000_000_000_000,  # LG Chem
-            '005380': 25_000_000_000_000,  # Hyundai Motor
-        }
-        
-        return major_companies.get(symbol.code, random.uniform(1_000_000_000_000, 5_000_000_000_000))
-
-
-class AlternativeDataAccessManager:
-    """Alternative data access manager using yfinance and web scraping."""
-    
-    def __init__(self, config: FilterConfig):
-        self.config = config
-        self.yf_adapter = YFinanceKoreanAdapter(config)
-        self.web_adapter = WebScrapingFinancialAdapter(config)
-    
-    def get_all_symbols(self) -> List[StockSymbol]:
-        """Get Korean stock symbols using alternative sources."""
-        try:
-            symbols = self.yf_adapter.get_korean_symbols()
-            logger.info(f"Retrieved {len(symbols)} Korean symbols via alternative sources")
-            return symbols
-        except Exception as e:
-            logger.error(f"Failed to retrieve symbols: {e}")
-            raise
-    
-    def get_trading_data(self, symbol: StockSymbol, days: int) -> pd.DataFrame:
-        """Get trading data using yfinance."""
-        try:
-            return self.yf_adapter.get_trading_data(symbol, days)
-        except Exception as e:
-            logger.error(f"Failed to get trading data for {symbol.code}: {e}")
-            raise
-    
-    def get_financial_data(self, symbol: StockSymbol, quarters: int = 4) -> Dict[str, Any]:
-        """Get financial data using web scraping adapter."""
-        try:
-            return self.web_adapter.get_financial_statements(symbol, quarters)
-        except Exception as e:
-            logger.error(f"Failed to get financial data for {symbol.code}: {e}")
-            raise
-    
-    def get_market_data(self, symbol: StockSymbol) -> Dict[str, Any]:
-        """Get market data with realistic estimates."""
-        try:
-            # Generate realistic market data
-            market_cap = random.uniform(1_000_000_000_000, 100_000_000_000_000)  # 1T-100T KRW
-            shares_outstanding = random.uniform(100_000_000, 10_000_000_000)  # 100M-10B shares
-            
-            return {
-                'symbol': symbol.code,
-                'market_cap': market_cap,
-                'shares_outstanding': shares_outstanding,
-                'sector': 'Technology',  # Default sector
-                'listing_date': datetime.now() - timedelta(days=random.randint(365, 7300))
-            }
-        except Exception as e:
-            logger.error(f"Failed to get market data for {symbol.code}: {e}")
-            raise
-    
-    def get_availability_status(self) -> Dict[str, bool]:
-        """Get availability status of alternative data sources."""
-        return {
-            'YFinance': self.yf_adapter.is_available(),
-            'WebScraping': self.web_adapter.is_available(),
-            'AlternativeData': True
-        }
-    
-    def get_retry_counts(self) -> Dict[str, int]:
-        """Get retry counts for all adapters."""
-        return {
-            'YFinance': self.yf_adapter.get_retry_count(),
-            'WebScraping': self.web_adapter.get_retry_count()
-        }
