@@ -6,7 +6,13 @@ Real data analysis script for Financial Stock Filter System
 
 import sys
 import os
+import io
 from pathlib import Path
+
+if sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if sys.stderr.encoding.lower() != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # Add the project root to Python path
 project_root = Path(__file__).parent
@@ -17,6 +23,7 @@ from auto_financial_filter.pipeline import StockFilterPipeline
 from auto_financial_filter.filters.liquidity_filter import LiquidityFilter
 from auto_financial_filter.filters.financial_health_filter import FinancialHealthFilter
 from auto_financial_filter.filters.quality_growth_filter import QualityGrowthFilter
+from auto_financial_filter.filters.momentum_filter import MomentumFilter
 from auto_financial_filter.utils.export import DataExporter
 import time
 import logging
@@ -74,7 +81,7 @@ def main():
         min_trading_volume_krw=5_000_000_000,    # 50억 KRW (더 현실적인 기준)
         trading_volume_period_days=30,           # 30일 평균
         max_debt_ratio_percent=200.0,            # 부채비율 200% 이하
-        min_revenue_growth_percent=5.0,          # 매출성장률 5% 이상 (더 현실적)
+        min_revenue_growth_percent=0.0,          # 매출성장률 0% 이상 (역성장 배제)
         cash_flow_quarters=4,                    # 4분기 현금흐름 분석
         min_operating_margin_percent=5.0,        # 영업이익률 5% 이상 (더 현실적)
         profit_trend_years=4,                    # 4년 수익성 트렌드
@@ -121,15 +128,18 @@ def main():
     liquidity_filter = LiquidityFilter(config, data_manager)
     financial_filter = FinancialHealthFilter(config, data_manager)
     quality_filter = QualityGrowthFilter(config, data_manager)
+    momentum_filter = MomentumFilter(config, data_manager)
     
     pipeline.add_filter(liquidity_filter)
     pipeline.add_filter(financial_filter)
     pipeline.add_filter(quality_filter)
+    pipeline.add_filter(momentum_filter)
     
     print(f"🔧 파이프라인 구성:")
     print(f"   1️⃣ 유동성 필터 (거래량 기준)")
     print(f"   2️⃣ 재무건전성 필터 (부채비율, 매출성장률, 현금흐름)")
     print(f"   3️⃣ 품질성장 필터 (영업이익률, 수익성 트렌드)")
+    print(f"   4️⃣ 모멘텀 필터 (120일 이동평균선 상회 여부)")
     print()
     
     # Get stock symbols
