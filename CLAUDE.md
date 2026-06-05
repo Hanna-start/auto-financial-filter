@@ -36,12 +36,25 @@
    (그 프로젝트는 독립 유지 — 그쪽 DB를 채우는 별개 단계).
 2. **데이터가 연(年) 단위.** 분기용 기존 필터는 못 씀 → 연 단위 필터로 기준 재정의함
    (매출성장=YoY, 이익피크=보유연도 중 최고, 원가율추세=연간 비교).
-3. **구식 가짜 경로 잔존.** `run_real_data_analysis.py` 등 기존 run 스크립트는 여전히
-   `alternative_adapters.py`의 가짜 생성기(`WebScrapingFinancialAdapter`)를 쓴다. 정리 대상.
+3. ~~구식 가짜 경로 잔존~~ ✅ **정리 완료(2026-06-05, cleanup 브랜치)** — `WebScrapingFinancialAdapter`
+   가짜 생성기와 이를 쓰던 스크립트 제거, 가짜 미국 경로(`us_adapters.py` 등) 삭제,
+   품질필터의 US 16분기 위조 시뮬 제거. 상세는 아래 §2.1.
+
+### ✅ 2026-06-05 추가 — 한국 전용으로 방향 확정 + 가짜/미국 정리
+방향: **지금은 한국만 완성한다.** 미국은 어차피 전부 가짜(`random.uniform()` 합성)였고,
+뼈대(모델·파이프라인·연 단위 필터)는 남으므로 향후 진짜 데이터(yfinance/EDGAR)로
+재연결 가능. 들어낸 것:
+
+- 가짜 미국 경로: `us_adapters.py`, `run_us_*.py`(3), `run_vectorized_us_analysis.py`, `debug_us_stage3.py`, `test_vectorized_us_analysis.py`
+- 가짜 재무 생성기: `alternative_adapters.py`의 `WebScrapingFinancialAdapter`/`AlternativeDataAccessManager`(진짜 `YFinanceKoreanAdapter`만 유지) + 이를 쓰던 `run_real_data_analysis.py`·빈 `run_real_analysis.py`·`debug_samsung.py`·`check_data_date{,2,3}.py`
+- 품질필터 결함: `quality_growth_filter.py`의 4→16·4→6분기 위조 시뮬(피크 판정 편향) 제거
+- 가짜 산출물·대시보드: `_archive_fake/`로 격리(삭제 아님, 복구 가능)
+- ⚠️ 알려진 잠재 이슈: `test_cash_flow_health_validation`(property test)이 fresh 실행 시 간헐 실패 — 손대지 않은 `financial_health_filter`의 현금흐름 로직. 별도 조사 대상.
 
 ### 산출물의 의미
-- `재무건전성_필터링_결과_*.xlsx`("3개"·"7개")는 **가짜 데이터 기반 구(舊) 시연** — 신뢰 불가.
-- `상장사_스크리너_결과_*.xlsx`(신규, `run_listed_screener.py` 산출)는 **실제 재무 기반** — 단 현재 대상 13개사 한정.
+
+- `상장사_스크리너_결과_*.xlsx`(`run_listed_screener.py` 산출)는 **실제 재무 기반** — 단 현재 대상 13개사 한정. **유일하게 신뢰할 산출물.**
+- 과거 가짜 데이터 산출물(`재무건전성_필터링_결과_*.xlsx` 등)은 `_archive_fake/`로 격리됨 — 신뢰 불가.
 
 ---
 
@@ -52,11 +65,11 @@
 | 설계·아키텍처 | ★★★★★ 실무급, 확장 고려 (포트/어댑터 분리) |
 | 테스트·검증 | ★★★★☆ 109개 + property-based test |
 | 문서화 | ★★★★☆ 기획(.kiro)~정리본까지 풍부 |
-| 실행 사용성 | ★★☆☆☆ CLI 방치, 8개 스크립트 분산 |
-| 버전 관리 | ★☆☆☆☆ 커밋 1개, 추적 불가 |
-| **데이터 신뢰성** | ☆☆☆☆☆ **가짜 데이터 — 결과 신뢰 불가** |
+| 실행 사용성 | ★★☆☆☆ CLI 방치, run 스크립트 분산(정리 후 감소) |
+| 버전 관리 | ★★★☆☆ cleanup 브랜치에서 의미 단위 커밋 시작(2026-06-05) |
+| **데이터 신뢰성** | ★★☆☆☆ **가짜 경로 제거 완료 → 진짜 경로만 남음. 단 실데이터가 13개사뿐** |
 
-본질: "거의 완성된 스크리너"가 아니라 "거의 완성된 스크리너의 틀". 빈 칸은 ① 진짜 종목 목록 ② 진짜 재무 데이터, 둘뿐.
+본질: "거의 완성된 스크리너"가 아니라 "거의 완성된 스크리너의 틀". 가짜는 걷어냈고, 남은 빈 칸은 **① 진짜 재무 데이터 범위 확대(13→전체)** 하나로 좁혀졌다.
 
 ---
 
@@ -64,13 +77,13 @@
 
 1. ~~[최우선] 진짜 데이터 연결~~ ✅ **완료(2026-06-05)** — screener.db 하이브리드 경로(`run_listed_screener.py`)
 2. **[최우선] 종목 범위 확대** — dart-audit-extractor에서 `screener/collect.py` 전체 적재 1회 실행 →
-   13개사 → 활성 상장사 전체(~2,600). 그 프로젝트는 독립이므로 그쪽에서 수행.
-3. **구식 가짜 경로 정리** — `run_real_data_analysis.py` 등 가짜 생성기 쓰는 스크립트 제거/대체,
-   `WebScrapingFinancialAdapter` 가짜 생성 로직 제거.
-4. **실행 통로 통합** — run 스크립트들을 CLI/설정 프리셋으로 통합.
-5. **정리** — 빈 파일/디버그 스크립트 제거, 벡터화/일반 필터 중복 정리.
-6. **로직 결함 수정** — 미국 품질필터의 16분기 인위 시뮬(피크 판정 편향).
-7. **버전 관리 복원** — 의미 단위 커밋.
+   13개사 → 활성 상장사 전체(~2,600). 그 프로젝트는 독립이므로 그쪽에서 수행. (현재 유일한 핵심 과제)
+3. ~~구식 가짜 경로 정리~~ ✅ **완료(2026-06-05)** — §2.1 참조.
+4. **실행 통로 통합** — 남은 run 스크립트(`run_listed_screener`/`run_relaxed_criteria`/`run_unlisted_company_analysis`)를 CLI/설정 프리셋으로 통합.
+5. **남은 정리(선택)** — `cli.py` 방치 상태 처리, 벡터화/일반 필터 중복, `_archive_fake/` 최종 삭제 여부.
+6. ~~미국 품질필터 16분기 시뮬 결함~~ ✅ **해결(2026-06-05)** — 위조 시뮬 제거(미국 경로 자체 삭제).
+7. **버전 관리** — cleanup 브랜치 → `main` 병합 결정. 이후 의미 단위 커밋 유지.
+8. **(신규) 잠재 이슈 조사** — `test_cash_flow_health_validation` property 테스트 간헐 실패 원인.
 
 ---
 
@@ -86,7 +99,8 @@
 ## 6. 기술 메모
 
 - 패키지: `auto_financial_filter/` (~5,200 LOC). 레이어: models → data_access → filters → pipeline → cli/utils
-- 데이터 소스 폴백 순서: alternative(가짜 재무) → original(DART, 키필요) → mock
-- 정식 진입점 `cli.py`는 1단계(유동성)에서 멈춰 방치됨. 실질 진입점은 루트의 `run_*.py`.
+- 진짜 경로(권장): 가격=yfinance(`YFinanceKoreanAdapter`) / 재무=screener.db(`ScreenerDBAdapter`), `HybridDataAccessManager`로 결합. 진입점 `run_listed_screener.py`.
+  - (가짜 `alternative`(WebScraping) 폴백은 제거됨. 남은 비실데이터 경로는 테스트·데모용 `mock_adapters`뿐.)
+- 정식 진입점 `cli.py`는 1단계(유동성)에서 멈춰 방치됨(미해결). 실질 진입점은 루트의 `run_listed_screener.py`.
 - 테스트: `tests/` 24파일 109함수, pytest + Hypothesis. 설계서 13개 correctness property와 매핑.
 - 스펙: `.kiro/specs/financial-stock-filter/` (requirements/design/tasks). 단 `.gitignore`에 포함됨.
