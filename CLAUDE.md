@@ -6,6 +6,26 @@
 
 ---
 
+## 0. ▶ 다음 세션 시작점 (2026-06-05 기준)
+
+**다음에 할 일: 재무 데이터 수집 범위 확대.** (정리·검증·문서화·GitHub 동기화는 이번 세션에 완료)
+
+- 현재 실데이터: **약 65개사** (옆 프로젝트 `dart-audit-extractor`의 `screener.db`). 전체 상장 ~3,965개.
+- 확대 방법 = **옆 폴더에서** 수집기 실행 후 이 폴더에서 재실행:
+
+```powershell
+cd d:\Agent_Project\dart-audit-extractor
+py screener/collect.py --pilot 300 --years 2022 2023 2024   # --pilot 숫자만 키우면 됨(재실행 안전)
+cd d:\Agent_Project\auto-financial-filter
+py run_listed_screener.py                                   # 확대된 데이터로 4단계 재실행
+```
+
+- ⚠️ **결정 필요**: 표본 크기(300/500/…). **1,000개 이상이면 DART 일 한도(20,000콜)에 닿아**
+  `collect.py`에 한도 감지·재개 처리(README TODO)를 먼저 붙여야 함(미해결). 수백 개는 무관.
+- 상세 맥락: §2.1, §4, 그리고 메모리 `project-dart-pipeline`.
+
+---
+
 ## 1. 프로젝트 목적
 
 "재무선배"라는 분이 공개한 펀더멘털 선별 기준을 코드로 자동화하여,
