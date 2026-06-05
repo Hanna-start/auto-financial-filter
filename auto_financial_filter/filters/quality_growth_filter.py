@@ -186,23 +186,8 @@ class QualityGrowthFilter(BaseFilter):
             quarterly_data = financial_data.get('quarterly_data', [])
             operating_profits = [q.get('operating_profit', 0) for q in quarterly_data]
         
-        # For US data, we only have 4 quarters, so simulate 16 quarters with trend
-        if len(operating_profits) == 4:
-            # Extend to 16 quarters by adding historical trend (simulate older data)
-            base_profits = operating_profits[:]
-            extended_profits = []
-            
-            # Add 12 more quarters going backwards with slight decline
-            for i in range(12):
-                quarter_idx = i % 4
-                decline_factor = 1.0 - (i * 0.02)  # 2% decline per quarter going back
-                historical_profit = base_profits[quarter_idx] * decline_factor
-                extended_profits.append(historical_profit)
-            
-            # Combine: historical (12) + current (4) = 16 quarters
-            operating_profits = extended_profits + operating_profits
-        
         # Ensure we have at least 16 quarters of data
+        # (과거 US 가짜 데이터용 4→16분기 위조 시뮬은 제거됨 — 부족하면 명확히 실패)
         if len(operating_profits) < 16:
             raise ValueError(f"Insufficient operating profit data: need 16 quarters, got {len(operating_profits)}")
         
@@ -247,16 +232,8 @@ class QualityGrowthFilter(BaseFilter):
                 
                 cogs_ratios.append(cogs_ratio)
         
-        # For US data, we only have 4 quarters, so extend to 6 quarters
-        if len(cogs_ratios) == 4:
-            # Add 2 more quarters going backwards with slight increase (simulate older higher COGS)
-            base_ratios = cogs_ratios[:]
-            for i in range(2):
-                # Simulate older quarters with slightly higher COGS ratios
-                older_ratio = base_ratios[i % 4] * (1.0 + (i + 1) * 0.01)  # 1-2% higher going back
-                cogs_ratios.insert(0, older_ratio)
-        
         # Ensure we have at least 6 quarters of data
+        # (과거 US 가짜 데이터용 4→6분기 위조 시뮬은 제거됨 — 부족하면 명확히 실패)
         if len(cogs_ratios) < 6:
             raise ValueError(f"Insufficient COGS data: need 6 quarters, got {len(cogs_ratios)}")
         
