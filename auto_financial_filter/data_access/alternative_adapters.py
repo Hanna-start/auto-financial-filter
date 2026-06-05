@@ -110,16 +110,22 @@ class YFinanceKoreanAdapter(DataSourceAdapter):
             raise RuntimeError("yfinance not available")
         
         def _get_data():
-            # Convert Korean stock code to yfinance format
-            ticker = f"{symbol.code}.KS"
-            
+            # Yahoo Finance 접미사: KOSPI=.KS, KOSDAQ=.KQ.
+            # 시장 매핑(corp_cls)이 어긋난 경우를 대비해 반대 접미사로 폴백한다.
+            primary = ".KQ" if symbol.market == "KOSDAQ" else ".KS"
+            fallback = ".KS" if primary == ".KQ" else ".KQ"
+
             end_date = datetime.now()
             start_date = end_date - timedelta(days=days + 10)
-            
-            stock = self._yf.Ticker(ticker)
-            df = stock.history(start=start_date, end=end_date)
-            
-            if df.empty:
+
+            df = None
+            for suffix in (primary, fallback):
+                stock = self._yf.Ticker(f"{symbol.code}{suffix}")
+                df = stock.history(start=start_date, end=end_date)
+                if not df.empty:
+                    break
+
+            if df is None or df.empty:
                 raise ValueError(f"No trading data available for symbol {symbol.code}")
             
             # Rename columns to match expected format
