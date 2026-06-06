@@ -6,23 +6,30 @@
 
 ---
 
-## 0. ▶ 다음 세션 시작점 (2026-06-05 기준)
+## 0. ▶ 다음 세션 시작점 (2026-06-06 기준)
 
-**다음에 할 일: 재무 데이터 수집 범위 확대.** (정리·검증·문서화·GitHub 동기화는 이번 세션에 완료)
+**현재 메인 작업 = 코스피 분기 스크리너.** (연간 경로는 별개로 유지 — §아래)
+실데이터 분기 재무로 코스피를 TTM·YoY 기준 스크리닝하는 새 워크스트림. 상세는 메모리 `project-kospi-quarterly`·`reference-korea-data-sources`.
 
-- 현재 실데이터: **약 65개사** (옆 프로젝트 `dart-audit-extractor`의 `screener.db`). 전체 상장 ~3,965개.
-- 확대 방법 = **옆 폴더에서** 수집기 실행 후 이 폴더에서 재실행:
+- **명단**: FinanceDataReader('KOSPI') 보통주 **838개**(상폐 없음, 시총순) → 옆 프로젝트 `data/kospi_index.json`.
+- **분기 수집 현황**: **Day 1 완료(시총 상위 280개, 2022~2026Q1)** → `screener.db`의 `financials_q` 테이블(연간 `financials`와 분리). 남은 배치(하루 한도 때문에 날 나눔):
 
 ```powershell
 cd d:\Agent_Project\dart-audit-extractor
-py screener/collect.py --pilot 300 --years 2022 2023 2024   # --pilot 숫자만 키우면 됨(재실행 안전)
+py screener/collect_quarterly.py --limit 560    # 다음 날: 281~560위 (앞 280 skip)
+py screener/collect_quarterly.py --limit 838    # 그 다음 날: 561~838위
 cd d:\Agent_Project\auto-financial-filter
-py run_listed_screener.py                                   # 확대된 데이터로 4단계 재실행
+py run_kospi_quarterly.py                        # 분기 스크리닝 → 코스피_분기_결과_*.xlsx + dashboard_kospi.html
 ```
 
-- ⚠️ **결정 필요**: 표본 크기(300/500/…). **1,000개 이상이면 DART 일 한도(20,000콜)에 닿아**
-  `collect.py`에 한도 감지·재개 처리(README TODO)를 먼저 붙여야 함(미해결). 수백 개는 무관.
-- 상세 맥락: §2.1, §4, 그리고 메모리 `project-dart-pipeline`.
+- **기준 = 원래 재무선배(엄격)**: 거래대금≥100억·부채비율<200%·매출성장YoY≥10%·TTM영업이익률≥10%·이익피크·원가율개선·TTM영업현금>0. (과거 완화=거래대금50억·성장0%·이익률5%는 2025·2026 분기 미수집 시절 통과 0을 피하려던 임시 우회였고, 데이터가 채워져 2026-06-06 원래 기준으로 복귀. 완화 산출물·`run_kospi_strict.py`는 제거.)
+- **1차 결과(280개)**: 유동성 169 → 재무건전성 46 → 최종 **15개**(삼성·SK하이닉스, HD현대 조선·중공업 6, 셀트리온·SK바이오팜, 에이피알·달바, 삼양식품, 이수페타시스, GS피앤엘). 삼성+69%·하이닉스+198%는 실제 메모리 업황 급등 — 데이터·환산 정확성 방증.
+- **핵심 학습**: 분기 `thstrm_amount`=3개월/`thstrm_add_amount`=누적, 순수분기=누적차감. 공시달력 게이트로 재실행 시 새 분기만 받음(무낭비).
+- **상태**: 이번 분기 작업 산출물·스크립트는 **미커밋·미push**(로컬만). git/push는 명시 지시 때만.
+
+### (참고) 옛 연간 경로 — 보류
+
+연간(`financials`, ~65개사, `run_listed_screener.py`)은 그대로 둠. 분기 코스피 작업이 우선.
 
 ---
 

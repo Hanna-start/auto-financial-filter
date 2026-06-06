@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>상장사 스크리너 결과 대시보드</title>
+<style>
+  :root{--bg:#0f1226;--card:#1a1f3a;--line:#2a3052;--fg:#e8ebf7;--mut:#9aa3c7;
+        --ok:#34d399;--no:#fb7185;--accent:#7c9cff;}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.5 'Segoe UI','Malgun Gothic',sans-serif;padding:32px 20px}
+  .wrap{max-width:1100px;margin:0 auto}
+  h1{font-size:24px;margin:0 0 4px} .sub{color:var(--mut);margin:0 0 28px;font-size:13px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:22px}
+  h2{font-size:15px;margin:0 0 16px;color:var(--accent);letter-spacing:.3px}
+  /* funnel */
+  .fstep{margin:9px 0} .fbar{height:30px;border-radius:7px;
+    background:linear-gradient(90deg,#4759b8,#7c9cff)}
+  .fstep.final .fbar{background:linear-gradient(90deg,#1f9d6b,#34d399)}
+  .fstep{position:relative;display:grid;grid-template-columns:1fr;align-items:center}
+  .flabel{position:absolute;left:12px;top:5px;font-size:13px;font-weight:600;color:#fff;text-shadow:0 1px 2px #0006}
+  .fcount{position:absolute;right:12px;top:3px;font-size:16px;font-weight:700;color:#fff;text-shadow:0 1px 2px #0006}
+  .fcount span{font-size:11px;font-weight:400;opacity:.85;margin-left:2px}
+  /* cards */
+  .cards{display:flex;gap:16px;flex-wrap:wrap}
+  .card{flex:1;min-width:240px;background:#141831;border:1px solid var(--line);
+    border-radius:12px;padding:18px;border-left:3px solid var(--ok)}
+  .cname{font-size:18px;font-weight:700} .cmeta{color:var(--mut);font-size:12px;margin:2px 0 14px}
+  .cgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .cgrid span{display:block;color:var(--mut);font-size:11px} .cgrid b{font-size:16px}
+  /* stats */
+  .stats{display:flex;gap:14px;flex-wrap:wrap}
+  .stat{flex:1;min-width:120px;background:#141831;border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .stat b{display:block;font-size:22px} .stat span{color:var(--mut);font-size:12px}
+  /* table */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.num.ok{color:var(--ok)} td.num.no{color:var(--no)}
+  .nm{font-weight:600} .cd{color:var(--mut);font-weight:400;font-size:11px;margin-left:7px}
+  .badge{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+  .b4{background:#103d2c;color:#34d399} .b3{background:#3a2b14;color:#fbbf24}
+  .b2{background:#3a2540;color:#e879f9} .b1{background:#3a1f2a;color:#fb7185} .b0{background:#252a44;color:#9aa3c7}
+  .muted{color:var(--mut)} .legend{color:var(--mut);font-size:12px;margin-top:12px}
+  .legend b{color:var(--fg)}
+</style></head>
+<body><div class="wrap">
+  <h1>상장사 스크리너 결과 대시보드</h1>
+  <p class="sub">실제 DART 재무 + yfinance 기반 · 대상 65개사 · 결과 시각 2026-06-05 20:25 · 출처 상장사_스크리너_결과_20260605_202543.xlsx</p>
+
+  <div class="panel">
+    <h2>단계별 필터 깔때기</h2>
+    
+        <div class="fstep">
+          <div class="fbar" style="width:100.0%"></div>
+          <div class="flabel">전체 대상</div>
+          <div class="fcount">65<span>개</span></div>
+        </div>
+        <div class="fstep">
+          <div class="fbar" style="width:23.1%"></div>
+          <div class="flabel">유동성</div>
+          <div class="fcount">15<span>개</span></div>
+        </div>
+        <div class="fstep">
+          <div class="fbar" style="width:7.7%"></div>
+          <div class="flabel">재무건전성</div>
+          <div class="fcount">5<span>개</span></div>
+        </div>
+        <div class="fstep">
+          <div class="fbar" style="width:6.0%"></div>
+          <div class="flabel">품질성장</div>
+          <div class="fcount">2<span>개</span></div>
+        </div>
+        <div class="fstep final">
+          <div class="fbar" style="width:6.0%"></div>
+          <div class="flabel">모멘텀</div>
+          <div class="fcount">2<span>개</span></div>
+        </div>
+    <p class="legend">기준: 유동성 거래대금 ≥ 50억 · 부채비율 &lt; 200% · 매출성장(YoY) ≥ 0% · 영업이익률 ≥ 5% · 영업이익 피크 · 영업현금흐름 건전</p>
+  </div>
+
+  <div class="panel">
+    <h2>최종 후보</h2>
+    <div class="cards">
+        <div class="card">
+          <div class="cname">에스엘(주)</div>
+          <div class="cmeta">005850 · KOSPI</div>
+          <div class="cgrid">
+            <div><span>매출(최근)</span><b>5.0조</b></div>
+            <div><span>매출성장</span><b>2.8%</b></div>
+            <div><span>영업이익률</span><b>7.9%</b></div>
+            <div><span>부채비율</span><b>54.3%</b></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="cname">한국콜마(주)</div>
+          <div class="cmeta">161890 · KOSPI</div>
+          <div class="cgrid">
+            <div><span>매출(최근)</span><b>2.5조</b></div>
+            <div><span>매출성장</span><b>13.7%</b></div>
+            <div><span>영업이익률</span><b>7.9%</b></div>
+            <div><span>부채비율</span><b>107.7%</b></div>
+          </div>
+        </div></div>
+  </div>
+
+  <div class="panel">
+    <h2>구성</h2>
+    <div class="stats">
+      <div class="stat"><b>65</b><span>전체 대상</span></div>
+      <div class="stat"><b>21</b><span>KOSPI</span></div>
+      <div class="stat"><b>44</b><span>KOSDAQ</span></div>
+      <div class="stat"><b>2</b><span>최종 후보</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>전체 65개사 (멀리 통과한 순)</h2>
+    <table>
+      <thead><tr>
+        <th>회사</th><th>시장</th><th>결과</th>
+        <th>부채비율</th><th>매출성장</th><th>영업이익률</th><th>영업현금흐름</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td class="nm">에스엘(주)<span class="cd">005850</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b4">최종 후보</span></td>
+          <td class="num ok">54.3%</td>
+          <td class="num ok">2.8%</td>
+          <td class="num ok">7.9%</td>
+          <td class="num ok">4820억</td>
+        </tr>
+        <tr>
+          <td class="nm">한국콜마(주)<span class="cd">161890</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b4">최종 후보</span></td>
+          <td class="num ok">107.7%</td>
+          <td class="num ok">13.7%</td>
+          <td class="num ok">7.9%</td>
+          <td class="num ok">2154억</td>
+        </tr>
+        <tr>
+          <td class="nm">효성티앤씨(주)<span class="cd">298020</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b2">탈락·품질성장</span></td>
+          <td class="num ok">159.6%</td>
+          <td class="num ok">3.3%</td>
+          <td class="num no">3.5%</td>
+          <td class="num ok">6549억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)씨젠<span class="cd">096530</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b2">탈락·품질성장</span></td>
+          <td class="num ok">22.8%</td>
+          <td class="num ok">12.8%</td>
+          <td class="num no">-4.0%</td>
+          <td class="num ok">854억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)레이크머티리얼즈<span class="cd">281740</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b2">탈락·품질성장</span></td>
+          <td class="num ok">167.4%</td>
+          <td class="num ok">17.8%</td>
+          <td class="num ok">16.0%</td>
+          <td class="num ok">9억</td>
+        </tr>
+        <tr>
+          <td class="nm">엘지디스플레이(주)<span class="cd">034220</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b1">탈락·재무건전성</span></td>
+          <td class="num no">307.0%</td>
+          <td class="num ok">24.8%</td>
+          <td class="num no">-2.1%</td>
+          <td class="num ok">2.4조</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)에코프로<span class="cd">086520</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b1">탈락·재무건전성</span></td>
+          <td class="num ok">112.0%</td>
+          <td class="num no">-56.9%</td>
+          <td class="num no">-9.4%</td>
+          <td class="num ok">4888억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)태웅<span class="cd">044490</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b1">탈락·재무건전성</span></td>
+          <td class="num ok">34.4%</td>
+          <td class="num no">-12.9%</td>
+          <td class="num ok">5.9%</td>
+          <td class="num ok">667억</td>
+        </tr>
+        <tr>
+          <td class="nm">에스티팜(주)<span class="cd">237690</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b1">탈락·재무건전성</span></td>
+          <td class="num ok">43.5%</td>
+          <td class="num no">-3.9%</td>
+          <td class="num ok">10.1%</td>
+          <td class="num ok">1095억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)와이투솔루션<span class="cd">011690</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b1">탈락·재무건전성</span></td>
+          <td class="num ok">15.0%</td>
+          <td class="num ok">12.8%</td>
+          <td class="num no">1.9%</td>
+          <td class="num no">100억</td>
+        </tr>
+        <tr>
+          <td class="nm">글로벌텍스프리(주)<span class="cd">204620</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b1">탈락·재무건전성</span></td>
+          <td class="num ok">36.0%</td>
+          <td class="num ok">38.9%</td>
+          <td class="num ok">16.8%</td>
+          <td class="num no">145억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)알엔티엑스<span class="cd">123010</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b1">탈락·재무건전성</span></td>
+          <td class="num ok">72.9%</td>
+          <td class="num ok">21.9%</td>
+          <td class="num no">-17.5%</td>
+          <td class="num no">-32억</td>
+        </tr>
+        <tr>
+          <td class="nm">주식회사 센서뷰<span class="cd">321370</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b1">탈락·재무건전성</span></td>
+          <td class="num ok">122.8%</td>
+          <td class="num ok">84.4%</td>
+          <td class="num no">-101.2%</td>
+          <td class="num no">-135억</td>
+        </tr>
+        <tr>
+          <td class="nm">아이씨티케이 주식회사<span class="cd">456010</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b1">탈락·재무건전성</span></td>
+          <td class="num ok">6.5%</td>
+          <td class="num ok">8.0%</td>
+          <td class="num no">-100.0%</td>
+          <td class="num no">-59억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)에스비비테크<span class="cd">389500</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b1">탈락·재무건전성</span></td>
+          <td class="num ok">138.0%</td>
+          <td class="num ok">6.5%</td>
+          <td class="num no">-126.1%</td>
+          <td class="num no">-41억</td>
+        </tr>
+        <tr>
+          <td class="nm">한세예스24홀딩스(주)<span class="cd">016450</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">184.1%</td>
+          <td class="num ok">1.8%</td>
+          <td class="num ok">5.4%</td>
+          <td class="num ok">773억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)노루홀딩스<span class="cd">000320</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">57.3%</td>
+          <td class="num ok">2.7%</td>
+          <td class="num ok">5.8%</td>
+          <td class="num ok">713억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)케이씨<span class="cd">029460</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">22.1%</td>
+          <td class="num ok">1.6%</td>
+          <td class="num no">3.8%</td>
+          <td class="num ok">368억</td>
+        </tr>
+        <tr>
+          <td class="nm">JW중외제약(주)<span class="cd">001060</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">83.5%</td>
+          <td class="num no">-3.9%</td>
+          <td class="num ok">11.5%</td>
+          <td class="num ok">794억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)백산<span class="cd">035150</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">82.9%</td>
+          <td class="num ok">19.0%</td>
+          <td class="num ok">15.4%</td>
+          <td class="num ok">562억</td>
+        </tr>
+        <tr>
+          <td class="nm">한국주철관공업(주)<span class="cd">000970</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">20.7%</td>
+          <td class="num no">-8.1%</td>
+          <td class="num no">3.7%</td>
+          <td class="num ok">243억</td>
+        </tr>
+        <tr>
+          <td class="nm">샘표(주)<span class="cd">007540</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">40.8%</td>
+          <td class="num ok">5.5%</td>
+          <td class="num no">1.5%</td>
+          <td class="num ok">351억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)골프존홀딩스<span class="cd">121440</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">40.7%</td>
+          <td class="num no">-9.6%</td>
+          <td class="num ok">10.2%</td>
+          <td class="num ok">256억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)세진중공업<span class="cd">075580</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">149.0%</td>
+          <td class="num no">-8.4%</td>
+          <td class="num ok">10.2%</td>
+          <td class="num ok">317억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)부방<span class="cd">014470</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">88.0%</td>
+          <td class="num ok">5.2%</td>
+          <td class="num no">1.4%</td>
+          <td class="num ok">88억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)루트로닉<span class="cd">085370</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">37.8%</td>
+          <td class="num ok">2.4%</td>
+          <td class="num ok">14.8%</td>
+          <td class="num ok">2억</td>
+        </tr>
+        <tr>
+          <td class="nm">한세엠케이(주)<span class="cd">069640</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num no">483.7%</td>
+          <td class="num no">-19.1%</td>
+          <td class="num no">-8.4%</td>
+          <td class="num no">-211억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)제일엠앤에스<span class="cd">412540</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num no">999.0%</td>
+          <td class="num">—</td>
+          <td class="num no">-52.4%</td>
+          <td class="num no">-636억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)휴니드테크놀러지스<span class="cd">005870</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">40.3%</td>
+          <td class="num ok">0.9%</td>
+          <td class="num no">4.0%</td>
+          <td class="num ok">-345억</td>
+        </tr>
+        <tr>
+          <td class="nm">현우산업(주)<span class="cd">092300</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">77.1%</td>
+          <td class="num no">-13.1%</td>
+          <td class="num no">3.8%</td>
+          <td class="num ok">182억</td>
+        </tr>
+        <tr>
+          <td class="nm">현대약품(주)<span class="cd">004310</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">97.8%</td>
+          <td class="num no">-2.8%</td>
+          <td class="num no">0.1%</td>
+          <td class="num ok">-24억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)루멘스<span class="cd">038060</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">51.0%</td>
+          <td class="num ok">1.7%</td>
+          <td class="num no">-0.9%</td>
+          <td class="num ok">43억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)씨티씨바이오<span class="cd">060590</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">120.8%</td>
+          <td class="num ok">4.7%</td>
+          <td class="num no">-2.7%</td>
+          <td class="num ok">45억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)케이아이엔엑스<span class="cd">093320</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">46.5%</td>
+          <td class="num ok">13.2%</td>
+          <td class="num ok">17.1%</td>
+          <td class="num ok">263억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)형지엘리트<span class="cd">093240</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">89.8%</td>
+          <td class="num ok">40.5%</td>
+          <td class="num ok">5.3%</td>
+          <td class="num ok">31억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)오스템<span class="cd">031510</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">84.4%</td>
+          <td class="num no">-9.9%</td>
+          <td class="num no">0.3%</td>
+          <td class="num ok">83억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)성원<span class="cd">015200</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">31.8%</td>
+          <td class="num no">-10.2%</td>
+          <td class="num ok">5.2%</td>
+          <td class="num ok">79억</td>
+        </tr>
+        <tr>
+          <td class="nm">지에이치신소재(주)<span class="cd">130500</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">95.2%</td>
+          <td class="num no">-5.7%</td>
+          <td class="num ok">9.2%</td>
+          <td class="num no">13억</td>
+        </tr>
+        <tr>
+          <td class="nm">웰바이오텍(주)<span class="cd">010600</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">58.3%</td>
+          <td class="num ok">15.5%</td>
+          <td class="num no">-3.5%</td>
+          <td class="num no">-61억</td>
+        </tr>
+        <tr>
+          <td class="nm">참엔지니어링(주)<span class="cd">009310</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num no">852.4%</td>
+          <td class="num no">-14.9%</td>
+          <td class="num no">-55.2%</td>
+          <td class="num no">-111억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)포니링크<span class="cd">064800</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">24.4%</td>
+          <td class="num no">-14.2%</td>
+          <td class="num no">-42.7%</td>
+          <td class="num no">-43억</td>
+        </tr>
+        <tr>
+          <td class="nm">동양파일(주)<span class="cd">228340</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">4.6%</td>
+          <td class="num no">-20.4%</td>
+          <td class="num no">-7.8%</td>
+          <td class="num ok">56억</td>
+        </tr>
+        <tr>
+          <td class="nm">우진비앤지(주)<span class="cd">018620</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">62.6%</td>
+          <td class="num no">-3.9%</td>
+          <td class="num no">0.5%</td>
+          <td class="num ok">67억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)윙스풋<span class="cd">335870</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">55.3%</td>
+          <td class="num no">-9.9%</td>
+          <td class="num no">4.1%</td>
+          <td class="num ok">18억</td>
+        </tr>
+        <tr>
+          <td class="nm">성우테크론(주)<span class="cd">045300</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">39.5%</td>
+          <td class="num ok">23.4%</td>
+          <td class="num no">2.8%</td>
+          <td class="num ok">51억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)육일씨엔에쓰<span class="cd">191410</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">155.5%</td>
+          <td class="num ok">29.4%</td>
+          <td class="num no">-1.3%</td>
+          <td class="num ok">6억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)비트컴퓨터<span class="cd">032850</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">13.1%</td>
+          <td class="num ok">10.8%</td>
+          <td class="num ok">18.0%</td>
+          <td class="num ok">52억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)플레이위드코리아<span class="cd">023770</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">94.1%</td>
+          <td class="num ok">13.2%</td>
+          <td class="num no">-26.4%</td>
+          <td class="num no">-14억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)손오공<span class="cd">066910</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">105.1%</td>
+          <td class="num no">-36.4%</td>
+          <td class="num no">-29.5%</td>
+          <td class="num no">-27억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)이엠앤아이<span class="cd">083470</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">58.0%</td>
+          <td class="num ok">12.9%</td>
+          <td class="num no">1.1%</td>
+          <td class="num ok">9억</td>
+        </tr>
+        <tr>
+          <td class="nm">지더블유바이텍(주)<span class="cd">036180</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">63.6%</td>
+          <td class="num no">-41.4%</td>
+          <td class="num no">-38.5%</td>
+          <td class="num no">-29억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)피엔티 엠에스<span class="cd">257370</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">101.3%</td>
+          <td class="num ok">4.7%</td>
+          <td class="num no">4.5%</td>
+          <td class="num ok">-13억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)케이엑스넥스지<span class="cd">081970</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">25.6%</td>
+          <td class="num ok">9.3%</td>
+          <td class="num ok">9.5%</td>
+          <td class="num ok">61억</td>
+        </tr>
+        <tr>
+          <td class="nm">주식회사 이지스레지던스위탁관리부동산투자회사<span class="cd">350520</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">27.7%</td>
+          <td class="num ok">0.4%</td>
+          <td class="num ok">62.9%</td>
+          <td class="num ok">32억</td>
+        </tr>
+        <tr>
+          <td class="nm">㈜엔에이치올원위탁관리부동산투자회사<span class="cd">400760</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num no">254.6%</td>
+          <td class="num ok">43.3%</td>
+          <td class="num ok">53.4%</td>
+          <td class="num ok">22억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)씨씨에스충북방송<span class="cd">066790</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">10.2%</td>
+          <td class="num no">-4.6%</td>
+          <td class="num no">-4.6%</td>
+          <td class="num ok">25억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)지에프씨생명과학<span class="cd">388610</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">84.0%</td>
+          <td class="num">—</td>
+          <td class="num ok">10.1%</td>
+          <td class="num ok">30억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)에스지헬스케어<span class="cd">398120</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">44.2%</td>
+          <td class="num">—</td>
+          <td class="num no">-4.2%</td>
+          <td class="num ok">11억</td>
+        </tr>
+        <tr>
+          <td class="nm">유네코(주)<span class="cd">064510</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">30.8%</td>
+          <td class="num no">-34.3%</td>
+          <td class="num ok">17.9%</td>
+          <td class="num ok">34억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)피플바이오<span class="cd">304840</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num no">255.3%</td>
+          <td class="num no">-16.2%</td>
+          <td class="num no">-308.2%</td>
+          <td class="num no">-109억</td>
+        </tr>
+        <tr>
+          <td class="nm">(주)대구백화점<span class="cd">006370</span></td>
+          <td>KOSPI</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">160.3%</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num no">-284억</td>
+        </tr>
+        <tr>
+          <td class="nm">한화플러스제3호기업인수목적(주)<span class="cd">430460</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">8.9%</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num no">-35,465,785</td>
+        </tr>
+        <tr>
+          <td class="nm">유안타제12호기업인수목적 주식회사<span class="cd">446150</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">10.9%</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num ok">5억</td>
+        </tr>
+        <tr>
+          <td class="nm">교보14호기업인수목적 주식회사<span class="cd">456490</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">20.7%</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num no">-45,372,063</td>
+        </tr>
+        <tr>
+          <td class="nm">유안타제16호기업인수목적 주식회사<span class="cd">474490</span></td>
+          <td>KOSDAQ</td>
+          <td><span class="badge b0">탈락·유동성</span></td>
+          <td class="num ok">15.2%</td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num ok">20,938,801</td>
+        </tr></tbody>
+    </table>
+    <p class="legend"><b>색상</b>: <span style="color:var(--ok)">초록</span>=기준 통과 · <span style="color:var(--no)">빨강</span>=미달.
+       재무 수치는 screener.db 최근 연도 기준. '결과'는 실제 4단계 파이프라인에서 탈락한 지점.</p>
+  </div>
+</div></body></html>
