@@ -59,6 +59,7 @@ env.bak/
 venv.bak/
 
 # Project specific
+market_cache.db
 *.xlsx
 *.csv
 refactor.py

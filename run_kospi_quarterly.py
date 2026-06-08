@@ -32,9 +32,9 @@ MIN_GROWTH_YOY = 10.0             # 매출성장 YoY %
 MIN_OP_MARGIN = 10.0              # TTM 영업이익률 %
 
 ACCT = {"매출액": "revenue", "영업이익": "op", "매출원가": "cogs",
-        "영업활동현금흐름": "ocf", "부채총계": "debt", "자본총계": "equity",
-        "자산총계": "assets"}
-FLOW = {"revenue", "op", "cogs", "ocf"}
+        "영업활동현금흐름": "ocf", "당기순이익": "net",
+        "부채총계": "debt", "자본총계": "equity", "자산총계": "assets"}
+FLOW = {"revenue", "op", "cogs", "ocf", "net"}
 STOCK = {"debt", "equity", "assets"}
 REPRT_ORDER = ["11013", "11012", "11014", "11011"]   # Q1,H1,9M,FY
 
@@ -107,12 +107,16 @@ def compute(d):
         return sum(vals) if all(v is not None for v in vals) else None
 
     ttm_rev, ttm_op, ttm_cogs, ttm_ocf = ttm("revenue"), ttm("op"), ttm("cogs"), ttm("ocf")
+    ttm_net = ttm("net")
     m = {
         "fs": d["fs"], "n_q": len(qk), "latest_q": f"{qk[-1][0]} {qk[-1][1]}Q",
-        "ttm_revenue": ttm_rev, "ttm_op": ttm_op, "ttm_ocf": ttm_ocf,
+        "ttm_revenue": ttm_rev, "ttm_op": ttm_op, "ttm_ocf": ttm_ocf, "ttm_net": ttm_net,
+        "equity": bs.get("equity"),
         "op_margin": (ttm_op / ttm_rev * 100) if (ttm_rev and ttm_op is not None) else None,
-        "debt_ratio": (bs["debt"] / bs["equity"] * 100) if bs.get("equity") else None,
+        "debt_ratio": (bs["debt"] / bs["equity"] * 100) if (bs.get("equity") and bs.get("debt") is not None) else None,
         "bs_asof": bs.get("asof"),
+        # 밸류에이션은 시총이 필요 → main 루프에서 add_valuation()이 채움
+        "per": None, "pbr": None, "psr": None, "p_op": None,
     }
     # YoY (같은 분기 전년)
     ly, lq = qk[-1]
@@ -138,10 +142,25 @@ def compute(d):
     return m
 
 
+def add_valuation(m, marcap):
+    """시총(FDR)과 재무를 결합한 밸류에이션 지표를 m에 채운다(필터 아님, 참고용).
+    PER=시총/TTM순이익, PBR=시총/자본총계, PSR=시총/TTM매출, 시총/TTM영업이익.
+    분모가 0·음수·없음이면 None(적자·미달은 '—'로 표기)."""
+    if not m or not marcap:
+        return
+    def ratio(denom):
+        return (marcap / denom) if (denom is not None and denom > 0) else None
+    m["per"] = ratio(m.get("ttm_net"))
+    m["pbr"] = ratio(m.get("equity"))
+    m["psr"] = ratio(m.get("ttm_revenue"))
+    m["p_op"] = ratio(m.get("ttm_op"))
+
+
 def screen(m, trading_krw):
     """단계별 통과 여부. 반환: dict(stage->bool), reasons."""
     liq = trading_krw is not None and trading_krw >= MIN_TRADING_KRW
-    fh = (m and m["debt_ratio"] is not None and m["debt_ratio"] < MAX_DEBT
+    fh = (m and m.get("equity") is not None and m["equity"] > 0
+          and m["debt_ratio"] is not None and m["debt_ratio"] < MAX_DEBT
           and m["rev_yoy"] is not None and m["rev_yoy"] >= MIN_GROWTH_YOY
           and m["ttm_ocf_ok"])
     qg = (m and m["op_margin"] is not None and m["op_margin"] >= MIN_OP_MARGIN
@@ -149,28 +168,78 @@ def screen(m, trading_krw):
     return {"liquidity": bool(liq), "financial": bool(fh), "quality": bool(qg)}
 
 
-def main(xlsx_prefix="코스피_분기_결과", dash="dashboard_kospi.html",
-         title="코스피 분기 스크리너 결과", criteria_note=""):
-    conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
-    corps = [r[0] for r in conn.execute("SELECT DISTINCT corp_code FROM financials_q")]
-    meta = {r[0]: (r[1], r[2]) for r in
-            conn.execute("SELECT corp_code, corp_name, stock_code FROM companies")}
-    print(f"분기 재무 보유 코스피: {len(corps)}개사")
+def fetch_krx_marcap(market):
+    """KRX 일별 시세 스냅샷(현재가·거래대금·시총·등락률)을 {종목코드:{...}} + 거래일로.
 
-    # FDR 거래대금·시총
-    fdr_map = {}
-    try:
-        import FinanceDataReader as fdr
-        df = fdr.StockListing("KOSPI")
+    FDR StockListing의 marcap-cache 경로는 'FinanceData/fdr_krx_data_cache' GitHub의
+    당일 CSV가 미게시면 404로 통째로 실패한다(2026-06-08 발생: 당일·일부일 파일 없음).
+    그래서 max_work_dt부터 거슬러 '실제 존재하는 가장 최근 거래일 CSV'를 찾아 받는다.
+    = 사용자 의도('직전 거래일 거래대금 써도 무방')와 동일. 받은 값은 market_cache로도 적재됨."""
+    import requests, pandas as pd
+    from datetime import timedelta
+    h = {"User-Agent": "Mozilla/5.0", "Referer": "https://data.krx.co.kr/"}
+    ru = ("http://data.krx.co.kr/comm/bldAttendant/executeForResourceBundle.cmd"
+          "?baseName=krx.mdc.i18n.component&key=B128.bld")
+    mwd = json.loads(requests.get(ru, headers=h, timeout=10).text)["result"]["output"][0]["max_work_dt"]
+    base = ("https://raw.githubusercontent.com/FinanceData/fdr_krx_data_cache/"
+            "refs/heads/master/data/listing/krx/{}.csv")
+    mkt = {"KOSPI": "STK", "KOSDAQ": "KSQ"}[market]
+    d0 = datetime.strptime(mwd, "%Y%m%d")
+    for i in range(15):                       # 최근 거래일 CSV 존재할 때까지 거슬러
+        ds = (d0 - timedelta(days=i)).strftime("%Y-%m-%d")
+        try:
+            df = pd.read_csv(base.format(ds), dtype={"Code": str, "MarketId": str})
+        except Exception:
+            continue
+        df = df[df["MarketId"] == mkt]
+        out = {}
         for _, r in df.iterrows():
-            fdr_map[str(r["Code"]).zfill(6)] = {
-                "amount": float(r["Amount"]) if r.get("Amount") == r.get("Amount") else None,
-                "marcap": float(r["Marcap"]) if r.get("Marcap") == r.get("Marcap") else None,
-                "chg": float(r["ChagesRatio"]) if r.get("ChagesRatio") == r.get("ChagesRatio") else None,
-            }
-        print(f"FDR 시장데이터(거래대금·시총): {len(fdr_map)}종목")
+            nn = lambda v: float(v) if v == v else None      # NaN 제거
+            out[str(r["Code"]).zfill(6)] = {
+                "close": nn(r["Close"]), "amount": nn(r["Amount"]),
+                "marcap": nn(r["Marcap"]), "chg": nn(r["ChagesRatio"])}
+        return out, ds
+    return {}, None
+
+
+def main(xlsx_prefix="코스피_분기_결과", dash="dashboard_kospi.html",
+         title="코스피 분기 스크리너 결과", criteria_note="",
+         market="KOSPI", index_json=None):
+    """market: FDR StockListing 시장명(KOSPI/KOSDAQ). 주가·거래대금·시총 출처.
+    index_json: 대상 명단 json 경로. 주면 그 회사들만(이름·종목코드도 여기서) 스크리닝
+                → financials_q에 코스피·코스닥이 섞여도 시장별 분리. 없으면 financials_q 전체."""
+    conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+    if index_json:
+        have = {r[0] for r in conn.execute("SELECT DISTINCT corp_code FROM financials_q")}
+        uni = json.loads(Path(index_json).read_text(encoding="utf-8"))
+        meta = {c["corp_code"]: (c.get("corp_name", ""), str(c.get("stock_code", "")).zfill(6))
+                for c in uni}
+        corps = [c["corp_code"] for c in uni if c["corp_code"] in have]
+    else:
+        corps = [r[0] for r in conn.execute("SELECT DISTINCT corp_code FROM financials_q")]
+        meta = {r[0]: (r[1], r[2]) for r in
+                conn.execute("SELECT corp_code, corp_name, stock_code FROM companies")}
+    print(f"분기 재무 보유 {market}: {len(corps)}개사")
+
+    # KRX 시장데이터: 현재가·등락률·거래대금·시총 (최근 거래일 기준)
+    fdr_map = {}
+    price_date = None
+    try:
+        fdr_map, price_date = fetch_krx_marcap(market)
+        print(f"KRX 시장데이터(현재가·거래대금·시총): {len(fdr_map)}종목"
+              + (f" · 거래일 {price_date}" if price_date else ""))
     except Exception as e:
-        print(f"[!] FDR 시장데이터 생략: {e}")
+        print(f"[!] KRX 시장데이터 생략: {e}")
+
+    # 시세 캐시: 라이브 성공분 저장 + 실패/누락분은 직전 저장값으로 폴백
+    import market_cache
+    fdr_map, cinfo = market_cache.merge_with_cache(market, fdr_map, price_date)
+    if not price_date and cinfo["asof_dates"]:
+        price_date = max(cinfo["asof_dates"])
+    if cinfo["cache"]:
+        print(f"  └ 거래대금 폴백: 캐시 {cinfo['cache']}종목"
+              + (f"(as-of {price_date})" if price_date else "")
+              + f" · 라이브 {cinfo['live']}종목")
 
     results = []
     for corp in corps:
@@ -179,6 +248,7 @@ def main(xlsx_prefix="코스피_분기_결과", dash="dashboard_kospi.html",
         d = load_company(conn, corp)
         m = compute(d) if d else None
         fdr_i = fdr_map.get(scode, {})
+        add_valuation(m, fdr_i.get("marcap"))
         st = screen(m, fdr_i.get("amount"))
         # 최종 후보 = 3단계 모두 통과
         final = st["liquidity"] and st["financial"] and st["quality"]
@@ -211,43 +281,60 @@ def main(xlsx_prefix="코스피_분기_결과", dash="dashboard_kospi.html",
     print(f"\n최종 후보 {len(finals)}개:")
     finals.sort(key=lambda r: -(r["fdr"].get("marcap") or 0))
     for r in finals:
-        m = r["m"]
-        print(f"  - {r['name']}({r['code']})  영업이익률(TTM) {m['op_margin']:.1f}% · "
-              f"매출성장(YoY) {m['rev_yoy']:.1f}% · 부채비율 {m['debt_ratio']:.0f}%")
+        m = r["m"]; f = r["fdr"]
+        cl = f.get("close"); ch = f.get("chg")
+        px = (f"{cl:,.0f}원" + (f"({ch:+.1f}%)" if ch is not None else "")) if cl else "주가—"
+        per = f"PER {m['per']:.1f}" if m.get("per") else "PER —"
+        pbr = f"PBR {m['pbr']:.2f}" if m.get("pbr") else "PBR —"
+        print(f"  - {r['name']}({r['code']})  {px} · 영업이익률(TTM) {m['op_margin']:.1f}% · "
+              f"매출성장(YoY) {m['rev_yoy']:.1f}% · 부채비율 {m['debt_ratio']:.0f}% · "
+              f"{per} · {pbr}")
 
     # 저장
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     xlsx = f"{xlsx_prefix}_{ts}.xlsx"
-    save_xlsx(results, xlsx)
+    save_xlsx(results, xlsx, price_date=price_date)
     print(f"\n📁 결과 저장: {xlsx}")
-    html_out = render(results, n, n_liq, n_fh, n_qg, finals, title=title, criteria_note=criteria_note)
+    html_out = render(results, n, n_liq, n_fh, n_qg, finals, title=title,
+                      criteria_note=criteria_note, price_date=price_date)
     Path(dash).write_text(html_out, encoding="utf-8")
     print(f"📊 대시보드: {dash}")
     return results
 
 
-def save_xlsx(results, path):
+def save_xlsx(results, path, price_date=None):
     try:
         import openpyxl
         from openpyxl import Workbook
         wb = Workbook(); ws = wb.active; ws.title = "코스피 분기 스크리닝"
-        ws.append(["종목코드", "회사명", "결과단계", "재무기준일", "거래대금(억)", "시총(억)",
-                   "TTM매출(억)", "TTM영업이익(억)", "영업이익률TTM(%)", "매출성장YoY(%)",
-                   "부채비율(%)", "이익피크", "원가율개선", "TTM영업현금>0"])
+        pcol = f"현재가(원,{price_date})" if price_date else "현재가(원)"
+        ws.append(["종목코드", "회사명", "결과단계", pcol, "등락률(%)", "재무기준일",
+                   "거래대금(억)", "시총(억)",
+                   "TTM매출(억)", "TTM영업이익(억)", "TTM순이익(억)", "영업이익률TTM(%)", "매출성장YoY(%)",
+                   "부채비율(%)", "PER", "PBR", "PSR", "시총/TTM영업이익",
+                   "이익피크", "원가율개선", "TTM영업현금>0"])
         order = sorted(results, key=lambda r: (-r["stage"], -(r["fdr"].get("marcap") or 0)))
         lbl = {3: "최종후보", 2: "탈락:품질성장", 1: "탈락:재무건전성", 0: "탈락:유동성"}
         for r in order:
             m = r["m"] or {}
             f = r["fdr"]
             ws.append([
-                r["code"], r["name"], lbl[r["stage"]], m.get("bs_asof", ""),
+                r["code"], r["name"], lbl[r["stage"]],
+                round(f.get("close")) if f.get("close") else None,
+                round(f.get("chg"), 2) if f.get("chg") is not None else None,
+                m.get("bs_asof", ""),
                 round(f.get("amount", 0)/1e8, 1) if f.get("amount") else None,
                 round(f.get("marcap", 0)/1e8, 0) if f.get("marcap") else None,
                 round(m.get("ttm_revenue", 0)/1e8, 0) if m.get("ttm_revenue") else None,
                 round(m.get("ttm_op", 0)/1e8, 0) if m.get("ttm_op") else None,
+                round(m.get("ttm_net", 0)/1e8, 0) if m.get("ttm_net") else None,
                 round(m["op_margin"], 1) if m.get("op_margin") is not None else None,
                 round(m["rev_yoy"], 1) if m.get("rev_yoy") is not None else None,
                 round(m["debt_ratio"], 0) if m.get("debt_ratio") is not None else None,
+                round(m["per"], 1) if m.get("per") is not None else None,
+                round(m["pbr"], 2) if m.get("pbr") is not None else None,
+                round(m["psr"], 2) if m.get("psr") is not None else None,
+                round(m["p_op"], 1) if m.get("p_op") is not None else None,
                 "O" if m.get("is_peak") else "X",
                 "O" if m.get("cogs_improving") else "X",
                 "O" if m.get("ttm_ocf_ok") else "X",
@@ -257,11 +344,19 @@ def save_xlsx(results, path):
         print(f"[!] xlsx 저장 실패: {e}")
 
 
-def render(results, n, n_liq, n_fh, n_qg, finals, title="코스피 분기 스크리너 결과", criteria_note=""):
+def render(results, n, n_liq, n_fh, n_qg, finals, title="코스피 분기 스크리너 결과",
+           criteria_note="", price_date=None):
     e = html.escape
     def won(v):
         return "—" if v is None else (f"{v/1e12:.1f}조" if abs(v)>=1e12 else f"{v/1e8:.0f}억")
     def pct(v): return "—" if v is None else f"{v:.1f}%"
+    def x1(v): return "—" if v is None else f"{v:.1f}배"   # PER·시총/영업이익
+    def x2(v): return "—" if v is None else f"{v:.2f}배"   # PBR·PSR
+    def krw(v): return "—" if v is None else f"{v:,.0f}원"  # 현재가
+    def chg(v):
+        if v is None: return ""
+        c = "var(--ok)" if v > 0 else ("var(--no)" if v < 0 else "var(--mut)")
+        return f'<span style="color:{c};font-size:12px"> {v:+.1f}%</span>'
 
     funnel = [("전체 대상", n), ("① 유동성", n_liq), ("② 재무건전성", n_fh), ("③ 품질성장(최종)", n_qg)]
     fhtml = ""
@@ -273,7 +368,7 @@ def render(results, n, n_liq, n_fh, n_qg, finals, title="코스피 분기 스크
     cards = ""
     for r in sorted(finals, key=lambda r:-(r["fdr"].get("marcap") or 0)):
         m=r["m"]; f=r["fdr"]
-        cards += f'<div class="card"><div class="cn">{e(r["name"])}</div><div class="cm">{e(r["code"])} · 시총 {won(f.get("marcap"))}</div><div class="cg"><div><span>영업이익률(TTM)</span><b>{pct(m["op_margin"])}</b></div><div><span>매출성장(YoY)</span><b>{pct(m["rev_yoy"])}</b></div><div><span>부채비율</span><b>{pct(m["debt_ratio"])}</b></div><div><span>거래대금</span><b>{won(f.get("amount"))}</b></div></div></div>'
+        cards += f'<div class="card"><div class="cn">{e(r["name"])}</div><div class="cm">{e(r["code"])} · 시총 {won(f.get("marcap"))}</div><div class="cg"><div><span>현재가</span><b>{krw(f.get("close"))}{chg(f.get("chg"))}</b></div><div><span>영업이익률(TTM)</span><b>{pct(m["op_margin"])}</b></div><div><span>매출성장(YoY)</span><b>{pct(m["rev_yoy"])}</b></div><div><span>부채비율</span><b>{pct(m["debt_ratio"])}</b></div><div><span>거래대금</span><b>{won(f.get("amount"))}</b></div><div><span>PER</span><b>{x1(m.get("per"))}</b></div><div><span>PBR</span><b>{x2(m.get("pbr"))}</b></div><div><span>PSR</span><b>{x2(m.get("psr"))}</b></div></div></div>'
     if not cards: cards = '<p class="mut">최종 후보 없음</p>'
 
     badge = {3:("최종후보","b3"),2:("탈락·품질","b2"),1:("탈락·재무","b1"),0:("탈락·유동성","b0")}
@@ -285,7 +380,7 @@ def render(results, n, n_liq, n_fh, n_qg, finals, title="코스피 분기 스크
             c = "" if ok is None else (" ok" if ok else " no")
             return f'<td class="num{c}">{txt}</td>'
         dr=m.get("debt_ratio"); gr=m.get("rev_yoy"); om=m.get("op_margin")
-        trs += f'<tr><td class="nm">{e(r["name"])}<span class="cd">{e(r["code"])}</span></td><td><span class="bd {cl}">{e(lb)}</span></td>{cell(om,(om>=MIN_OP_MARGIN) if om is not None else None,pct(om))}{cell(gr,(gr>=MIN_GROWTH_YOY) if gr is not None else None,pct(gr))}{cell(dr,(dr<MAX_DEBT) if dr is not None else None,pct(dr))}<td class="num">{won(m.get("ttm_revenue"))}</td><td class="num">{won(f.get("amount"))}</td></tr>'
+        trs += f'<tr><td class="nm">{e(r["name"])}<span class="cd">{e(r["code"])}</span></td><td><span class="bd {cl}">{e(lb)}</span></td><td class="num">{krw(f.get("close"))}{chg(f.get("chg"))}</td>{cell(om,(om>=MIN_OP_MARGIN) if om is not None else None,pct(om))}{cell(gr,(gr>=MIN_GROWTH_YOY) if gr is not None else None,pct(gr))}{cell(dr,(dr<MAX_DEBT) if dr is not None else None,pct(dr))}<td class="num">{x1(m.get("per"))}</td><td class="num">{x2(m.get("pbr"))}</td><td class="num">{won(m.get("ttm_revenue"))}</td><td class="num">{won(f.get("amount"))}</td></tr>'
 
     return f"""<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(title)}</title>
 <style>
@@ -305,12 +400,13 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}}td.num.ok{{color:var
 .mut{{color:var(--mut)}}.lg{{color:var(--mut);font-size:12px;margin-top:12px}}
 </style></head><body><div class="w">
 <h1>{e(title)}</h1>
-<p class="sub">실제 DART 분기 재무(TTM·YoY 기준) + FinanceDataReader 거래대금·시총 · 대상 {n}개사 · {datetime.now().strftime("%Y-%m-%d %H:%M")}{(" · " + e(criteria_note)) if criteria_note else ""}</p>
+<p class="sub">실제 DART 분기 재무(TTM·YoY 기준) + FinanceDataReader 현재가·거래대금·시총 · 대상 {n}개사 · 생성 {datetime.now().strftime("%Y-%m-%d %H:%M")}{(" · 주가 기준일 " + e(price_date)) if price_date else ""}{(" · " + e(criteria_note)) if criteria_note else ""}</p>
 <div class="p"><h2>단계별 깔때기</h2>{fhtml}<p class="lg">판단: 규모·수익성=TTM(최근 4분기 합), 성장=YoY(같은 분기 전년). 분기값은 누적 차감으로 환산. 기준: 거래대금≥{MIN_TRADING_KRW/1e8:.0f}억·부채비율&lt;{MAX_DEBT:.0f}%·매출성장≥{MIN_GROWTH_YOY:.0f}%·영업이익률(TTM)≥{MIN_OP_MARGIN:.0f}%·이익피크·원가율개선·TTM영업현금&gt;0</p></div>
 <div class="p"><h2>최종 후보</h2><div class="cards">{cards}</div></div>
-<div class="p"><h2>전체 {n}개사 (통과 멀리 간 순 · 시총순)</h2><table><thead><tr><th>회사</th><th>결과</th><th>영업이익률(TTM)</th><th>매출성장(YoY)</th><th>부채비율</th><th>TTM매출</th><th>거래대금</th></tr></thead><tbody>{trs}</tbody></table><p class="lg"><span style="color:var(--ok)">초록</span>=기준통과 / <span style="color:var(--no)">빨강</span>=미달. 거래대금은 FDR 최근 거래일 기준.</p></div>
+<div class="p"><h2>전체 {n}개사 (통과 멀리 간 순 · 시총순)</h2><table><thead><tr><th>회사</th><th>결과</th><th>현재가</th><th>영업이익률(TTM)</th><th>매출성장(YoY)</th><th>부채비율</th><th>PER</th><th>PBR</th><th>TTM매출</th><th>거래대금</th></tr></thead><tbody>{trs}</tbody></table><p class="lg"><span style="color:var(--ok)">초록</span>=기준통과 / <span style="color:var(--no)">빨강</span>=미달. 거래대금은 FDR 최근 거래일 기준.</p></div>
 </div></body></html>"""
 
 
 if __name__ == "__main__":
-    main()
+    # index_json으로 코스피 명단만 대상화(financials_q에 코스닥·미국이 섞여 있으므로).
+    main(index_json="D:/Agent_Project/dart-audit-extractor/data/kospi_index.json")
