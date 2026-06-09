@@ -81,7 +81,8 @@ def main(argv):
 
     # 검토용 CSV
     today = datetime.now().strftime("%Y%m%d")
-    csv_path = Path(f"us_유동성후보_{today}.csv")
+    Path("results").mkdir(exist_ok=True)
+    csv_path = Path(f"results/us_유동성후보_{today}.csv")
     with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["rank", "ticker", "name", "exchange", "거래대금($M)", "cik"])

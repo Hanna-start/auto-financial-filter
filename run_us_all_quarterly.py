@@ -22,5 +22,5 @@ if __name__ == "__main__":
     main(index_paths=[US_INDEX, US_LIQUID],
          label="미국 거래소 상장(유동성통과)",
          title="미국 전체(거래소 상장) 분기 스크리너 결과",
-         dash="dashboard_us_all.html",
+         dash="dashboards/dashboard_us_all.html",
          xlsx_prefix="미국전체_분기_결과")

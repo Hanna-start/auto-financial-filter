@@ -20,7 +20,7 @@ KOSDAQ_INDEX = "D:/Agent_Project/dart-audit-extractor/data/kosdaq_index.json"
 
 if __name__ == "__main__":
     main(xlsx_prefix="코스닥_분기_결과",
-         dash="dashboard_kosdaq.html",
+         dash="dashboards/dashboard_kosdaq.html",
          title="코스닥 분기 스크리너 결과",
          market="KOSDAQ",
          index_json=KOSDAQ_INDEX)

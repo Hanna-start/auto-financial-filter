@@ -21,151 +21,12 @@ from pathlib import Path
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
-DB = "D:/Agent_Project/dart-audit-extractor/screener.db"
+# 공유 엔진(적재·환산·지표·기준·게이트)은 engine.py 한 곳. 기준은 KR_CRITERIA 프로파일.
+from engine import (DB, MAX_DEBT, MIN_GROWTH_YOY, MIN_OP_MARGIN,
+                    load_company, compute, add_valuation, screen, KR_CRITERIA)
 
-# 기준 — 원래 '재무선배' 기준 (config.py 기본값과 동일)
-# 과거 완화(거래대금50억·성장0%·이익률5%)는 2025·2026 분기가 수집 전이라
-# 통과 기업이 0이던 임시 우회책이었음. 데이터가 채워져 원래 기준으로 복귀.
-MIN_TRADING_KRW = 10_000_000_000  # 거래대금 100억
-MAX_DEBT = 200.0                  # 부채비율 %
-MIN_GROWTH_YOY = 10.0             # 매출성장 YoY %
-MIN_OP_MARGIN = 10.0              # TTM 영업이익률 %
-
-ACCT = {"매출액": "revenue", "영업이익": "op", "매출원가": "cogs",
-        "영업활동현금흐름": "ocf", "당기순이익": "net",
-        "부채총계": "debt", "자본총계": "equity", "자산총계": "assets"}
-FLOW = {"revenue", "op", "cogs", "ocf", "net"}
-STOCK = {"debt", "equity", "assets"}
-REPRT_ORDER = ["11013", "11012", "11014", "11011"]   # Q1,H1,9M,FY
-
-
-def load_company(conn, corp):
-    rows = conn.execute(
-        "SELECT bsns_year,reprt_code,fs_div,계정,값,값_누적 FROM financials_q WHERE corp_code=?",
-        (corp,)).fetchall()
-    if not rows:
-        return None
-    fs = "CFS" if any(r[2] == "CFS" for r in rows) else "OFS"
-    idx = {}
-    for y, r, fsd, acct, v, va in rows:
-        if fsd != fs:
-            continue
-        k = ACCT.get(acct)
-        if k:
-            idx[(y, r, k)] = (v, va)
-
-    quarters = {}
-    years = sorted({y for (y, _, _) in idx})
-    for y in years:
-        for key in FLOW:
-            def cum(r):
-                t = idx.get((y, r, key))
-                if t is None:
-                    return None
-                v, va = t
-                return va if va is not None else v
-            cq1, ch, c9 = cum("11013"), cum("11012"), cum("11014")
-            tfy = idx.get((y, "11011", key))
-            cfy = tfy[0] if tfy else None
-            qv = {}
-            if cq1 is not None:
-                qv[1] = cq1
-            if ch is not None and cq1 is not None:
-                qv[2] = ch - cq1
-            if c9 is not None and ch is not None:
-                qv[3] = c9 - ch
-            if cfy is not None and c9 is not None:
-                qv[4] = cfy - c9
-            for q, val in qv.items():
-                quarters.setdefault((y, q), {})[key] = val
-
-    qkeys = sorted(quarters.keys())
-    present = sorted({(y, r) for (y, r, _) in idx},
-                     key=lambda yr: (yr[0], REPRT_ORDER.index(yr[1])))
-    bs = {}
-    if present:
-        ly, lr = present[-1]
-        for key in STOCK:
-            t = idx.get((ly, lr, key))
-            bs[key] = t[0] if t else None
-        bs["asof"] = f"{ly} {REPRT_NM(lr)}"
-    return {"quarters": quarters, "qkeys": qkeys, "bs": bs, "fs": fs}
-
-
-def REPRT_NM(r):
-    return {"11013": "1Q", "11012": "2Q(반기)", "11014": "3Q", "11011": "4Q(연간)"}.get(r, r)
-
-
-def compute(d):
-    q, qk, bs = d["quarters"], d["qkeys"], d["bs"]
-    if len(qk) < 4:
-        return None
-    last4 = qk[-4:]
-
-    def ttm(key):
-        vals = [q[k].get(key) for k in last4]
-        return sum(vals) if all(v is not None for v in vals) else None
-
-    ttm_rev, ttm_op, ttm_cogs, ttm_ocf = ttm("revenue"), ttm("op"), ttm("cogs"), ttm("ocf")
-    ttm_net = ttm("net")
-    m = {
-        "fs": d["fs"], "n_q": len(qk), "latest_q": f"{qk[-1][0]} {qk[-1][1]}Q",
-        "ttm_revenue": ttm_rev, "ttm_op": ttm_op, "ttm_ocf": ttm_ocf, "ttm_net": ttm_net,
-        "equity": bs.get("equity"),
-        "op_margin": (ttm_op / ttm_rev * 100) if (ttm_rev and ttm_op is not None) else None,
-        "debt_ratio": (bs["debt"] / bs["equity"] * 100) if (bs.get("equity") and bs.get("debt") is not None) else None,
-        "bs_asof": bs.get("asof"),
-        # 밸류에이션은 시총이 필요 → main 루프에서 add_valuation()이 채움
-        "per": None, "pbr": None, "psr": None, "p_op": None,
-    }
-    # YoY (같은 분기 전년)
-    ly, lq = qk[-1]
-    rn = q[qk[-1]].get("revenue")
-    rp = q.get((ly - 1, lq), {}).get("revenue")
-    m["rev_yoy"] = ((rn - rp) / rp * 100) if (rp and rn is not None) else None
-    # 이익 피크: 롤링 4분기 영업이익 합 중 최근이 최고
-    sums = []
-    for i in range(len(qk) - 3):
-        w = [q[k].get("op") for k in qk[i:i + 4]]
-        if all(x is not None for x in w):
-            sums.append(sum(w))
-    m["is_peak"] = bool(sums) and ttm_op is not None and ttm_op >= max(sums)
-    # 원가율 추세: 최근 TTM cogs율 < 가장 이른 4분기 cogs율
-    def cogs_ratio(ks):
-        cc = [q[k].get("cogs") for k in ks]; rr = [q[k].get("revenue") for k in ks]
-        if all(x is not None for x in cc + rr) and sum(rr) > 0:
-            return sum(cc) / sum(rr)
-        return None
-    cr_new = cogs_ratio(last4); cr_old = cogs_ratio(qk[:4])
-    m["cogs_improving"] = (cr_new is not None and cr_old is not None and cr_new <= cr_old)
-    m["ttm_ocf_ok"] = (ttm_ocf is not None and ttm_ocf > 0)
-    return m
-
-
-def add_valuation(m, marcap):
-    """시총(FDR)과 재무를 결합한 밸류에이션 지표를 m에 채운다(필터 아님, 참고용).
-    PER=시총/TTM순이익, PBR=시총/자본총계, PSR=시총/TTM매출, 시총/TTM영업이익.
-    분모가 0·음수·없음이면 None(적자·미달은 '—'로 표기)."""
-    if not m or not marcap:
-        return
-    def ratio(denom):
-        return (marcap / denom) if (denom is not None and denom > 0) else None
-    m["per"] = ratio(m.get("ttm_net"))
-    m["pbr"] = ratio(m.get("equity"))
-    m["psr"] = ratio(m.get("ttm_revenue"))
-    m["p_op"] = ratio(m.get("ttm_op"))
-
-
-def screen(m, trading_krw):
-    """단계별 통과 여부. 반환: dict(stage->bool), reasons."""
-    liq = trading_krw is not None and trading_krw >= MIN_TRADING_KRW
-    fh = (m and m.get("equity") is not None and m["equity"] > 0
-          and m["debt_ratio"] is not None and m["debt_ratio"] < MAX_DEBT
-          and m["rev_yoy"] is not None and m["rev_yoy"] >= MIN_GROWTH_YOY
-          and m["ttm_ocf_ok"])
-    qg = (m and m["op_margin"] is not None and m["op_margin"] >= MIN_OP_MARGIN
-          and m["is_peak"] and m["cogs_improving"])
-    return {"liquidity": bool(liq), "financial": bool(fh), "quality": bool(qg)}
+# 표시용 별칭(단일 출처=engine.KR_CRITERIA). 게이트는 screen(m, trading, KR_CRITERIA).
+MIN_TRADING_KRW = KR_CRITERIA.min_trading  # 거래대금 100억원
 
 
 def fetch_krx_marcap(market):
@@ -202,7 +63,7 @@ def fetch_krx_marcap(market):
     return {}, None
 
 
-def main(xlsx_prefix="코스피_분기_결과", dash="dashboard_kospi.html",
+def main(xlsx_prefix="코스피_분기_결과", dash="dashboards/dashboard_kospi.html",
          title="코스피 분기 스크리너 결과", criteria_note="",
          market="KOSPI", index_json=None):
     """market: FDR StockListing 시장명(KOSPI/KOSDAQ). 주가·거래대금·시총 출처.
@@ -249,7 +110,7 @@ def main(xlsx_prefix="코스피_분기_결과", dash="dashboard_kospi.html",
         m = compute(d) if d else None
         fdr_i = fdr_map.get(scode, {})
         add_valuation(m, fdr_i.get("marcap"))
-        st = screen(m, fdr_i.get("amount"))
+        st = screen(m, fdr_i.get("amount"), KR_CRITERIA)
         # 최종 후보 = 3단계 모두 통과
         final = st["liquidity"] and st["financial"] and st["quality"]
         # 도달 단계
@@ -290,9 +151,10 @@ def main(xlsx_prefix="코스피_분기_결과", dash="dashboard_kospi.html",
               f"매출성장(YoY) {m['rev_yoy']:.1f}% · 부채비율 {m['debt_ratio']:.0f}% · "
               f"{per} · {pbr}")
 
-    # 저장
+    # 저장 (xlsx→results/, 대시보드→dashboards/)
+    Path("results").mkdir(exist_ok=True); Path("dashboards").mkdir(exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    xlsx = f"{xlsx_prefix}_{ts}.xlsx"
+    xlsx = f"results/{xlsx_prefix}_{ts}.xlsx"
     save_xlsx(results, xlsx, price_date=price_date)
     print(f"\n📁 결과 저장: {xlsx}")
     html_out = render(results, n, n_liq, n_fh, n_qg, finals, title=title,
