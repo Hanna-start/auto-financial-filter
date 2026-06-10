@@ -1,0 +1,7 @@
+# legacy/ 옛 '연간' 프레임워크 전용 의존성 (현재 미사용·보존).
+# 활성 스크리너(루트)는 이들을 import하지 않는다 — 루트 requirements.txt 참고.
+hypothesis>=6.0.0       # 속성기반 테스트 (legacy/tests)
+pyyaml>=6.0             # config.yaml 로딩
+python-dateutil>=2.8.0
+beautifulsoup4>=4.11.0  # HTML 파싱
+lxml>=4.9.0

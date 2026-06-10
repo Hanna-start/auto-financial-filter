@@ -182,6 +182,18 @@ def add_valuation(m, marcap):
     m["p_op"] = ratio(m.get("ttm_op"))
 
 
+def debt_ratio_display(m):
+    """표시용 부채비율. 음수자본(equity<0)이면 debt/equity가 음수(예: -150%)로 나와 혼동되므로
+    None('—')으로 가린다. 필터 판정(screen)은 원래 m['debt_ratio']로 그대로 수행 — 표시만 가린다.
+    (음수자본+이익잉여금>0 우량주가 음수 부채비율로 <200% 게이트를 통과하는 것은 의도된 동작.)"""
+    if not m:
+        return None
+    dr = m.get("debt_ratio")
+    if dr is None or (m.get("equity") is not None and m["equity"] < 0):
+        return None
+    return dr
+
+
 def equity_ok(m, c):
     """⑧ 자본 게이트. 기본: 자본총계>0. 미국(allow_neg_equity_if_retained): 음수자본이어도
     이익잉여금>0이면 통과(자사주매입 우량주) / 이익잉여금≤0(누적적자)이면 탈락."""

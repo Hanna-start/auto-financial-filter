@@ -29,13 +29,17 @@ def _conn():
 
 
 def save_snapshot(market, date, data):
-    """라이브 조회 성공분을 (market,ticker,date)로 upsert. date 없으면 저장 안 함."""
+    """라이브 조회 성공분을 (market,ticker,date)로 upsert. date 없으면 저장 안 함.
+
+    amount(거래대금)이 None인 항목은 저장하지 않는다 — 이 캐시의 존재 이유가 '거래대금
+    폴백'인데, 오늘 amount=None을 today 날짜로 저장하면 load_latest가 그걸 '최신'으로
+    골라 어제의 정상 거래대금을 덮어써 폴백이 무력화되기 때문(직전 정상값을 보존한다)."""
     if not date or not data:
         return 0
     n = 0
     with _conn() as c:
         for tk, v in data.items():
-            if not v:
+            if not v or v.get("amount") is None:
                 continue
             c.execute("INSERT OR REPLACE INTO market_cache VALUES(?,?,?,?,?,?,?)",
                       (market, tk, date, v.get("close"), v.get("amount"),
@@ -76,4 +80,5 @@ def merge_with_cache(market, live, price_date):
                 asof_dates.add(cache[tk]["asof"])
         elif lv:                       # 라이브에 있으나 amount 없음 + 캐시도 없음
             eff[tk] = dict(lv); eff[tk]["asof"] = price_date
-    return eff, {"live": n_live, "cache": n_cache, "asof_dates": asof_dates, "saved": saved}
+    return eff, {"live": n_live, "cache": n_cache,
+                 "asof_dates": sorted(asof_dates), "saved": saved}

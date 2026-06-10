@@ -24,34 +24,53 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 DATA_DIR = Path("D:/Agent_Project/dart-audit-extractor/data")
 US_ALL = DATA_DIR / "us_all_index.json"
 US_LIQUID = DATA_DIR / "us_liquid_index.json"
+# 수집 전 선필터값. 일부러 최종 게이트(engine.US_CRITERIA.min_trading=$30M)보다 느슨하게 둔다
+# ($10M~$30M 종목도 일단 수집해 두고 최종 스크린에서 $30M로 거른다). 이 값은 ≤ $30M이어야 한다.
 MIN_TRADING_USD = 10_000_000
 
 
-def dollar_volume(tickers, chunk):
-    """yfinance bulk download → {ticker: 최근10거래일 평균 달러거래대금}. 실패 종목은 누락."""
+def _download_chunk(part, attempts=3):
+    """yfinance bulk download를 지수 백오프(2·4초)로 재시도. 끝내 실패하면 None."""
     import yfinance as yf
-    out = {}
+    for a in range(attempts):
+        try:
+            return yf.download(part, period="1mo", interval="1d", group_by="ticker",
+                               auto_adjust=False, threads=True, progress=False)
+        except Exception as e:
+            if a == attempts - 1:
+                print(f"  [!] 청크 {len(part)}종목 {attempts}회 다운로드 실패: {e}")
+                return None
+            time.sleep(2 ** (a + 1))
+
+
+def dollar_volume(tickers, chunk):
+    """yfinance bulk download → {ticker: 최근10거래일 평균 달러거래대금(유효 5일 미만이면 제외)}.
+    실패 종목은 누락하되 끝에 건수 보고(다음 단계 collect_us 입력이라 누락 추적이 중요)."""
+    out, failed = {}, []
     n = len(tickers)
     for i in range(0, n, chunk):
         part = tickers[i:i + chunk]
-        try:
-            df = yf.download(part, period="1mo", interval="1d", group_by="ticker",
-                             auto_adjust=False, threads=True, progress=False)
-        except Exception as e:
-            print(f"  [chunk {i}-{i+len(part)}] 다운로드 실패: {e}")
-            continue
+        df = _download_chunk(part)
+        if df is None:
+            failed.extend(part); continue
         for tk in part:
             try:
                 sub = df[tk] if len(part) > 1 else df
                 dv = (sub["Close"] * sub["Volume"]).dropna().tail(10)
-                if len(dv):
+                if len(dv) >= 5:                 # 유효 거래일 5일 이상만 신뢰
                     v = float(dv.mean())
-                    if v == v:                  # NaN 아님
+                    if v == v:                   # NaN 아님
                         out[tk] = v
+                    else:
+                        failed.append(tk)
+                else:
+                    failed.append(tk)
             except Exception:
-                continue
+                failed.append(tk); continue
         print(f"  진행 {min(i+chunk, n)}/{n} · 시세확보 {len(out)}", flush=True)
         time.sleep(1.0)                          # yfinance 과부하 완화
+    if failed:
+        print(f"  [!] 시세 미확보/거래일부족 {len(failed)}종목 — 유동성 미확인 제외")
     return out
 
 

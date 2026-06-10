@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 # 공유 엔진 + 미국 기준 프로파일(US_CRITERIA). 기준 이원화는 engine.py / 기준_미국.md.
-from engine import (load_company, compute, add_valuation, screen,
+from engine import (load_company, compute, add_valuation, screen, debt_ratio_display,
                     MIN_OP_MARGIN, MAX_DEBT, MIN_GROWTH_YOY, DB, US_CRITERIA)
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -45,39 +45,55 @@ def trim_recent(d, n_q=RECENT_QUARTERS):
     return {**d, "quarters": quarters, "qkeys": qk}
 
 
+def _download_chunk(part, attempts=3):
+    """yfinance bulk download를 지수 백오프(2·4초)로 재시도. 끝내 실패하면 None."""
+    import yfinance as yf, time
+    for a in range(attempts):
+        try:
+            return yf.download(part, period="1mo", interval="1d", group_by="ticker",
+                               auto_adjust=False, threads=True, progress=False)
+        except Exception as e:
+            if a == attempts - 1:
+                print(f"  [!] 청크 {len(part)}종목 {attempts}회 다운로드 실패: {e}")
+                return None
+            time.sleep(2 ** (a + 1))
+
+
 def fetch_market(tickers, chunk=400):
     """yfinance bulk download → {ticker:{close, amount(달러거래대금), marcap=None, chg}} + 주가기준일.
     수천 종목용(종목별 1콜 루프는 느리고 불안정 → 청크 bulk). 거래대금=최근 10거래일 평균
-    달러거래대금. 시총(marcap)은 download에 없어 fetch_marcaps로 최종/재무통과 종목만 별도 조회."""
-    import yfinance as yf, time
-    out, price_date = {}, None
+    달러거래대금(유효 거래일 5일 미만이면 신뢰 못해 None). 시총(marcap)은 download에 없어
+    fetch_marcaps로 최종/재무통과 종목만 별도 조회. 실패 종목은 누락하되 끝에 건수 보고."""
+    import time
+    out, price_date, failed = {}, None, []
     n = len(tickers)
     for i in range(0, n, chunk):
         part = tickers[i:i + chunk]
-        try:
-            df = yf.download(part, period="1mo", interval="1d", group_by="ticker",
-                             auto_adjust=False, threads=True, progress=False)
-        except Exception as e:
-            print(f"  [chunk {i}] 다운로드 실패: {e}"); continue
-        if df is not None and len(df.index):
+        df = _download_chunk(part)
+        if df is None:
+            failed.extend(part); continue
+        if len(df.index):
             price_date = df.index[-1].strftime("%Y-%m-%d")
         for tk in part:
             try:
                 sub = df[tk] if len(part) > 1 else df
                 cl = sub["Close"].dropna()
                 if not len(cl):
-                    continue
+                    failed.append(tk); continue
                 close = float(cl.iloc[-1])
                 prev = float(cl.iloc[-2]) if len(cl) > 1 else None
                 chg = (close / prev - 1) * 100 if prev else None
                 dv = (sub["Close"] * sub["Volume"]).dropna().tail(10)
-                amount = float(dv.mean()) if len(dv) else None
+                amount = float(dv.mean()) if len(dv) >= 5 else None
                 out[tk] = {"close": close, "amount": amount, "marcap": None, "chg": chg}
             except Exception:
-                continue
+                failed.append(tk); continue
         if n > chunk:
             print(f"  시장데이터 {min(i+chunk, n)}/{n} · 확보 {len(out)}", flush=True)
         time.sleep(1.0)
+    if failed:
+        print(f"  [!] 시세 미확보 {len(failed)}종목(예: {', '.join(failed[:8])}"
+              + ("…" if len(failed) > 8 else "") + ") — 캐시 폴백 대상")
     return out, price_date
 
 
@@ -170,13 +186,15 @@ def main(index_paths=None, label="S&P500", title="미국(S&P500) 분기 스크�
         cl = f.get("close"); ch = f.get("chg")
         px = (f"${cl:,.2f}" + (f"({ch:+.1f}%)" if ch is not None else "")) if cl else "주가—"
         per = f"PER {m['per']:.1f}" if m.get("per") else "PER —"
+        drx = debt_ratio_display(m)
+        drs = f"{drx:.0f}%" if drx is not None else "—"
         print(f"  - {r['name']}({r['code']})  {px} · 영업이익률(TTM) {m['op_margin']:.1f}% · "
-              f"매출성장(YoY) {m['rev_yoy']:.1f}% · 부채비율 {m['debt_ratio']:.0f}% · {per}")
+              f"매출성장(YoY) {m['rev_yoy']:.1f}% · 부채비율 {drs} · {per}")
 
     Path("results").mkdir(exist_ok=True); Path("dashboards").mkdir(exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     xlsx = f"results/{xlsx_prefix}_{ts}.xlsx"
-    save_xlsx(results, xlsx, price_date=price_date)
+    save_xlsx(results, xlsx, price_date=price_date, sheet=title)
     print(f"\n📁 결과 저장: {xlsx}")
     Path(dash).write_text(
         render(results, n, n_liq, n_fh, n_qg, finals, price_date=price_date, title=title), encoding="utf-8")
@@ -184,10 +202,10 @@ def main(index_paths=None, label="S&P500", title="미국(S&P500) 분기 스크�
     return results
 
 
-def save_xlsx(results, path, price_date=None):
+def save_xlsx(results, path, price_date=None, sheet="미국 분기 스크리닝"):
     try:
         from openpyxl import Workbook
-        wb = Workbook(); ws = wb.active; ws.title = "미국 S&P500 분기 스크리닝"
+        wb = Workbook(); ws = wb.active; ws.title = sheet[:31]
         pcol = f"현재가($,{price_date})" if price_date else "현재가($)"
         ws.append(["티커", "회사명", "섹터", "결과단계", pcol, "등락률(%)", "재무기준일",
                    "거래대금($M)", "시총($B)",
@@ -198,6 +216,7 @@ def save_xlsx(results, path, price_date=None):
         lbl = {3: "최종후보", 2: "탈락:품질성장", 1: "탈락:재무건전성", 0: "탈락:유동성"}
         for r in order:
             m = r["m"] or {}; f = r["fdr"]
+            dr = debt_ratio_display(m)
             ws.append([
                 r["code"], r["name"], r.get("sector", ""), lbl[r["stage"]],
                 round(f.get("close"), 2) if f.get("close") else None,
@@ -210,7 +229,7 @@ def save_xlsx(results, path, price_date=None):
                 round(m.get("ttm_net", 0)/1e6, 0) if m.get("ttm_net") else None,
                 round(m["op_margin"], 1) if m.get("op_margin") is not None else None,
                 round(m["rev_yoy"], 1) if m.get("rev_yoy") is not None else None,
-                round(m["debt_ratio"], 0) if m.get("debt_ratio") is not None else None,
+                round(dr, 0) if dr is not None else None,
                 round(m["per"], 1) if m.get("per") is not None else None,
                 round(m["pbr"], 2) if m.get("pbr") is not None else None,
                 round(m["psr"], 2) if m.get("psr") is not None else None,
@@ -250,7 +269,7 @@ def render(results, n, n_liq, n_fh, n_qg, finals, price_date=None,
     cards = ""
     for r in sorted(finals, key=lambda r:-(r["fdr"].get("marcap") or 0)):
         m=r["m"]; f=r["fdr"]
-        cards += f'<div class="card"><div class="cn">{e(r["name"])}</div><div class="cm">{e(r["code"])} · {e(r.get("sector",""))} · 시총 {usd(f.get("marcap"))}</div><div class="cg"><div><span>현재가</span><b>{prc(f.get("close"))}{chg(f.get("chg"))}</b></div><div><span>영업이익률(TTM)</span><b>{pct(m["op_margin"])}</b></div><div><span>매출성장(YoY)</span><b>{pct(m["rev_yoy"])}</b></div><div><span>부채비율</span><b>{pct(m["debt_ratio"])}</b></div><div><span>거래대금</span><b>{usd(f.get("amount"))}</b></div><div><span>PER</span><b>{x1(m.get("per"))}</b></div><div><span>PBR</span><b>{x2(m.get("pbr"))}</b></div><div><span>PSR</span><b>{x2(m.get("psr"))}</b></div></div></div>'
+        cards += f'<div class="card"><div class="cn">{e(r["name"])}</div><div class="cm">{e(r["code"])} · {e(r.get("sector",""))} · 시총 {usd(f.get("marcap"))}</div><div class="cg"><div><span>현재가</span><b>{prc(f.get("close"))}{chg(f.get("chg"))}</b></div><div><span>영업이익률(TTM)</span><b>{pct(m["op_margin"])}</b></div><div><span>매출성장(YoY)</span><b>{pct(m["rev_yoy"])}</b></div><div><span>부채비율</span><b>{pct(debt_ratio_display(m))}</b></div><div><span>거래대금</span><b>{usd(f.get("amount"))}</b></div><div><span>PER</span><b>{x1(m.get("per"))}</b></div><div><span>PBR</span><b>{x2(m.get("pbr"))}</b></div><div><span>PSR</span><b>{x2(m.get("psr"))}</b></div></div></div>'
     if not cards: cards = '<p class="mut">최종 후보 없음</p>'
 
     badge = {3:("최종후보","b3"),2:("탈락·품질","b2"),1:("탈락·재무","b1"),0:("탈락·유동성","b0")}
@@ -261,7 +280,7 @@ def render(results, n, n_liq, n_fh, n_qg, finals, price_date=None,
         def cell(v, ok, txt):
             c = "" if ok is None else (" ok" if ok else " no")
             return f'<td class="num{c}">{txt}</td>'
-        dr=m.get("debt_ratio"); gr=m.get("rev_yoy"); om=m.get("op_margin")
+        dr=debt_ratio_display(m); gr=m.get("rev_yoy"); om=m.get("op_margin")
         trs += f'<tr><td class="nm">{e(r["name"])}<span class="cd">{e(r["code"])}</span></td><td><span class="bd {cl}">{e(lb)}</span></td><td class="num">{prc(f.get("close"))}{chg(f.get("chg"))}</td>{cell(om,(om>=MIN_OP_MARGIN) if om is not None else None,pct(om))}{cell(gr,(gr>=MIN_GROWTH_YOY) if gr is not None else None,pct(gr))}{cell(dr,(dr<MAX_DEBT) if dr is not None else None,pct(dr))}<td class="num">{x1(m.get("per"))}</td><td class="num">{x2(m.get("pbr"))}</td><td class="num">{usd(m.get("ttm_revenue"))}</td><td class="num">{usd(f.get("amount"))}</td></tr>'
 
     return f"""<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(title)}</title>

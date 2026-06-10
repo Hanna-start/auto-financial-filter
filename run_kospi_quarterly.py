@@ -23,10 +23,12 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 # 공유 엔진(적재·환산·지표·기준·게이트)은 engine.py 한 곳. 기준은 KR_CRITERIA 프로파일.
 from engine import (DB, MAX_DEBT, MIN_GROWTH_YOY, MIN_OP_MARGIN,
-                    load_company, compute, add_valuation, screen, KR_CRITERIA)
+                    load_company, compute, add_valuation, screen, debt_ratio_display,
+                    KR_CRITERIA)
 
 # 표시용 별칭(단일 출처=engine.KR_CRITERIA). 게이트는 screen(m, trading, KR_CRITERIA).
 MIN_TRADING_KRW = KR_CRITERIA.min_trading  # 거래대금 100억원
+KOSPI_INDEX = "D:/Agent_Project/dart-audit-extractor/data/kospi_index.json"
 
 
 def fetch_krx_marcap(market):
@@ -155,7 +157,7 @@ def main(xlsx_prefix="코스피_분기_결과", dash="dashboards/dashboard_kospi
     Path("results").mkdir(exist_ok=True); Path("dashboards").mkdir(exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     xlsx = f"results/{xlsx_prefix}_{ts}.xlsx"
-    save_xlsx(results, xlsx, price_date=price_date)
+    save_xlsx(results, xlsx, price_date=price_date, sheet=title)
     print(f"\n📁 결과 저장: {xlsx}")
     html_out = render(results, n, n_liq, n_fh, n_qg, finals, title=title,
                       criteria_note=criteria_note, price_date=price_date)
@@ -164,11 +166,11 @@ def main(xlsx_prefix="코스피_분기_결과", dash="dashboards/dashboard_kospi
     return results
 
 
-def save_xlsx(results, path, price_date=None):
+def save_xlsx(results, path, price_date=None, sheet="분기 스크리닝"):
     try:
         import openpyxl
         from openpyxl import Workbook
-        wb = Workbook(); ws = wb.active; ws.title = "코스피 분기 스크리닝"
+        wb = Workbook(); ws = wb.active; ws.title = sheet[:31]
         pcol = f"현재가(원,{price_date})" if price_date else "현재가(원)"
         ws.append(["종목코드", "회사명", "결과단계", pcol, "등락률(%)", "재무기준일",
                    "거래대금(억)", "시총(억)",
@@ -180,6 +182,7 @@ def save_xlsx(results, path, price_date=None):
         for r in order:
             m = r["m"] or {}
             f = r["fdr"]
+            dr = debt_ratio_display(m)
             ws.append([
                 r["code"], r["name"], lbl[r["stage"]],
                 round(f.get("close")) if f.get("close") else None,
@@ -192,7 +195,7 @@ def save_xlsx(results, path, price_date=None):
                 round(m.get("ttm_net", 0)/1e8, 0) if m.get("ttm_net") else None,
                 round(m["op_margin"], 1) if m.get("op_margin") is not None else None,
                 round(m["rev_yoy"], 1) if m.get("rev_yoy") is not None else None,
-                round(m["debt_ratio"], 0) if m.get("debt_ratio") is not None else None,
+                round(dr, 0) if dr is not None else None,
                 round(m["per"], 1) if m.get("per") is not None else None,
                 round(m["pbr"], 2) if m.get("pbr") is not None else None,
                 round(m["psr"], 2) if m.get("psr") is not None else None,
@@ -241,7 +244,7 @@ def render(results, n, n_liq, n_fh, n_qg, finals, title="코스피 분기 스크
         def cell(v, ok, txt):
             c = "" if ok is None else (" ok" if ok else " no")
             return f'<td class="num{c}">{txt}</td>'
-        dr=m.get("debt_ratio"); gr=m.get("rev_yoy"); om=m.get("op_margin")
+        dr=debt_ratio_display(m); gr=m.get("rev_yoy"); om=m.get("op_margin")
         trs += f'<tr><td class="nm">{e(r["name"])}<span class="cd">{e(r["code"])}</span></td><td><span class="bd {cl}">{e(lb)}</span></td><td class="num">{krw(f.get("close"))}{chg(f.get("chg"))}</td>{cell(om,(om>=MIN_OP_MARGIN) if om is not None else None,pct(om))}{cell(gr,(gr>=MIN_GROWTH_YOY) if gr is not None else None,pct(gr))}{cell(dr,(dr<MAX_DEBT) if dr is not None else None,pct(dr))}<td class="num">{x1(m.get("per"))}</td><td class="num">{x2(m.get("pbr"))}</td><td class="num">{won(m.get("ttm_revenue"))}</td><td class="num">{won(f.get("amount"))}</td></tr>'
 
     return f"""<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(title)}</title>
@@ -271,4 +274,4 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}}td.num.ok{{color:var
 
 if __name__ == "__main__":
     # index_json으로 코스피 명단만 대상화(financials_q에 코스닥·미국이 섞여 있으므로).
-    main(index_json="D:/Agent_Project/dart-audit-extractor/data/kospi_index.json")
+    main(index_json=KOSPI_INDEX)
