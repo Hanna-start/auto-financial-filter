@@ -22,20 +22,24 @@ from dataclasses import dataclass
 
 DB = "D:/Agent_Project/dart-audit-extractor/screener.db"
 
-# === 공통 기본 임계 (= 국내 '재무선배' 엄격 기준) ===
+# === 공통 기본 임계 (= 국내 엄격 기준) ===
 MAX_DEBT = 200.0                  # 부채비율 % (미만)
 MIN_GROWTH_YOY = 10.0             # 매출성장 YoY % (이상)
 MIN_OP_MARGIN = 10.0              # TTM 영업이익률 % (이상)
 # 밸류에이션 배수 상한: 초과 시 분모(순이익·자본·매출)가 0에 가깝거나 결측이라 생긴
 # 비정상값(예: PER 수천~수백만배)으로 보고 표시에서 제외('—'). 정상 고PER(수백배)은 보존. KR·US 공통.
 RATIO_MAX = 1000.0
+# 거래대금(유동성 게이트) N일 평균 윈도우. 업계 표준(일반 20일·기관/지수 60일=3개월). KR·US 공통.
+# 하루치는 실적발표·대량단발체결로 출렁여 게이트로 불안정 → 최근 N거래일 평균으로 안정화.
+# 현재가·시총·등락률은 평균이 아닌 '최근 거래일 EOD' 값을 그대로 쓴다(거래대금만 평균).
+TRADING_AVG_DAYS = 20
 
 
 @dataclass(frozen=True)
 class Criteria:
     """시장별 선별 기준 프로파일. 한국/미국을 독립적으로 조정하기 위한 이원화 단위.
     문서: 기준_국내.md / 기준_미국.md. 게이트 적용은 screen(m, trading, criteria).
-    기본값 = 국내 기준(원래 '재무선배' 엄격). 미국은 시장 특성에 맞춰 일부 토글."""
+    기본값 = 국내 엄격 기준. 미국은 시장 특성에 맞춰 일부 토글."""
     min_trading: float                  # 거래대금 하한 (시장 통화: KR=원, US=달러)
     recent_quarters: int = 0            # 이력 절단 분기수(0=제한없음). 미국=20(최근5년).
     max_debt: float = MAX_DEBT          # 부채비율 % (미만)
@@ -62,6 +66,7 @@ ACCT = {"매출액": "revenue", "영업이익": "op", "매출원가": "cogs",
 FLOW = {"revenue", "op", "cogs", "ocf", "net"}
 STOCK = {"debt", "equity", "assets", "retained"}
 REPRT_ORDER = ["11013", "11012", "11014", "11011"]   # Q1,H1,9M,FY
+_ACCT_PH = ",".join("?" * len(ACCT))   # load_company가 필요한 9개 계정만 거르도록(행수↓·로드 속도↑)
 
 
 def REPRT_NM(r):
@@ -70,8 +75,9 @@ def REPRT_NM(r):
 
 def load_company(conn, corp):
     rows = conn.execute(
-        "SELECT bsns_year,reprt_code,fs_div,계정,값,값_누적 FROM financials_q WHERE corp_code=?",
-        (corp,)).fetchall()
+        f"SELECT bsns_year,reprt_code,fs_div,계정,값,값_누적 FROM financials_q "
+        f"WHERE corp_code=? AND 계정 IN ({_ACCT_PH})",
+        (corp, *ACCT)).fetchall()
     if not rows:
         return None
     fs = "CFS" if any(r[2] == "CFS" for r in rows) else "OFS"

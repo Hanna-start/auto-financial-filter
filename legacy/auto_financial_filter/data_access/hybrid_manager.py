@@ -1,7 +1,7 @@
 """
 HybridDataAccessManager — 가격은 yfinance, 재무는 실제 screener.db.
 
-재무선배 기준을 진짜 데이터로 돌리기 위한 데이터 매니저.
+기준을 진짜 데이터로 돌리기 위한 데이터 매니저.
 - 1·4단계(유동성·모멘텀): 주가/거래량이 필요 → yfinance (DART에는 주가가 없음)
 - 2·3단계(재무건전성·품질성장): 실제 재무 → screener.db (연 단위)
 

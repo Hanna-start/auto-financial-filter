@@ -3,7 +3,7 @@
 
 기존 분기용 필터(financial_health_filter.py / quality_growth_filter.py)는
 8분기·16분기를 요구하므로 연 데이터(회사당 최대 3~5년)로는 돌릴 수 없다.
-이 모듈은 재무선배 기준을 **연 단위**에 맞게 재정의한 필터다.
+이 모듈은 기준을 **연 단위**에 맞게 재정의한 필터다.
 
 데이터 입력: data_manager.get_financial_data(symbol)['annual_data']
   = [ {year, revenue, operating_profit, cogs, total_debt, total_equity,

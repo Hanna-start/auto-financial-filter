@@ -24,22 +24,24 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 # 공유 엔진(적재·환산·지표·기준·게이트)은 engine.py 한 곳. 기준은 KR_CRITERIA 프로파일.
 from engine import (DB, MAX_DEBT, MIN_GROWTH_YOY, MIN_OP_MARGIN,
                     load_company, compute, add_valuation, screen, debt_ratio_display,
-                    KR_CRITERIA)
+                    KR_CRITERIA, TRADING_AVG_DAYS)
 
 # 표시용 별칭(단일 출처=engine.KR_CRITERIA). 게이트는 screen(m, trading, KR_CRITERIA).
 MIN_TRADING_KRW = KR_CRITERIA.min_trading  # 거래대금 100억원
 KOSPI_INDEX = "D:/Agent_Project/dart-audit-extractor/data/kospi_index.json"
 
 
-def fetch_krx_marcap(market):
-    """KRX 일별 시세 스냅샷(현재가·거래대금·시총·등락률)을 {종목코드:{...}} + 거래일로.
+def fetch_krx_marcap(market, avg_days=TRADING_AVG_DAYS, max_back=None):
+    """KRX 일별 시세 → {종목코드:{close, amount, marcap, chg}} + 기준거래일.
+      - 현재가·시총·등락률 = 가장 최근 거래일 값(EOD, 평균 아님).
+      - 거래대금(amount) = 최근 avg_days 거래일 평균(업계 표준; 하루치 출렁임 완화).
 
-    FDR StockListing의 marcap-cache 경로는 'FinanceData/fdr_krx_data_cache' GitHub의
-    당일 CSV가 미게시면 404로 통째로 실패한다(2026-06-08 발생: 당일·일부일 파일 없음).
-    그래서 max_work_dt부터 거슬러 '실제 존재하는 가장 최근 거래일 CSV'를 찾아 받는다.
-    = 사용자 의도('직전 거래일 거래대금 써도 무방')와 동일. 받은 값은 market_cache로도 적재됨."""
+    FDR 'FinanceData/fdr_krx_data_cache' GitHub의 일별 CSV를 max_work_dt부터 거슬러,
+    '실제 존재하는' 거래일 CSV를 avg_days개 모은다(주말·휴장·미게시일은 건너뜀 → max_back일 내).
+    가장 최근 성공일이 기준거래일(price_date). 받은 값은 market_cache로도 적재됨."""
     import requests, pandas as pd
     from datetime import timedelta
+    max_back = max_back or (avg_days * 2 + 10)            # 거래일 avg_days개 확보용 달력일 여유
     h = {"User-Agent": "Mozilla/5.0", "Referer": "https://data.krx.co.kr/"}
     ru = ("http://data.krx.co.kr/comm/bldAttendant/executeForResourceBundle.cmd"
           "?baseName=krx.mdc.i18n.component&key=B128.bld")
@@ -47,22 +49,43 @@ def fetch_krx_marcap(market):
     base = ("https://raw.githubusercontent.com/FinanceData/fdr_krx_data_cache/"
             "refs/heads/master/data/listing/krx/{}.csv")
     mkt = {"KOSPI": "STK", "KOSDAQ": "KSQ"}[market]
+    nn = lambda v: float(v) if v == v else None           # NaN 제거
     d0 = datetime.strptime(mwd, "%Y%m%d")
-    for i in range(15):                       # 최근 거래일 CSV 존재할 때까지 거슬러
+    latest, price_date = None, None                       # 최근 거래일 종가·시총·등락률
+    amt_sum, amt_cnt = {}, {}                             # 거래대금 평균 누적(종목별)
+    days = 0
+    for i in range(max_back):
+        if days >= avg_days:
+            break
         ds = (d0 - timedelta(days=i)).strftime("%Y-%m-%d")
         try:
             df = pd.read_csv(base.format(ds), dtype={"Code": str, "MarketId": str})
         except Exception:
-            continue
+            continue                                      # 주말·휴장·미게시일
         df = df[df["MarketId"] == mkt]
-        out = {}
+        if not len(df):
+            continue
+        first = latest is None                            # 첫(=가장 최근) 성공일
+        if first:
+            latest, price_date = {}, ds
         for _, r in df.iterrows():
-            nn = lambda v: float(v) if v == v else None      # NaN 제거
-            out[str(r["Code"]).zfill(6)] = {
-                "close": nn(r["Close"]), "amount": nn(r["Amount"]),
-                "marcap": nn(r["Marcap"]), "chg": nn(r["ChagesRatio"])}
-        return out, ds
-    return {}, None
+            code = str(r["Code"]).zfill(6)
+            a = nn(r["Amount"])
+            if a is not None:
+                amt_sum[code] = amt_sum.get(code, 0.0) + a
+                amt_cnt[code] = amt_cnt.get(code, 0) + 1
+            if first:
+                latest[code] = {"close": nn(r["Close"]), "marcap": nn(r["Marcap"]),
+                                "chg": nn(r["ChagesRatio"])}
+        days += 1
+    if latest is None:
+        return {}, None
+    out = {}
+    for code, v in latest.items():
+        out[code] = {"close": v["close"],
+                     "amount": (amt_sum[code] / amt_cnt[code]) if amt_cnt.get(code) else None,
+                     "marcap": v["marcap"], "chg": v["chg"]}
+    return out, price_date
 
 
 def main(xlsx_prefix="코스피_분기_결과", dash="dashboards/dashboard_kospi.html",
@@ -266,9 +289,9 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}}td.num.ok{{color:var
 </style></head><body><div class="w">
 <h1>{e(title)}</h1>
 <p class="sub">실제 DART 분기 재무(TTM·YoY 기준) + FinanceDataReader 현재가·거래대금·시총 · 대상 {n}개사 · 생성 {datetime.now().strftime("%Y-%m-%d %H:%M")}{(" · 주가 기준일 " + e(price_date)) if price_date else ""}{(" · " + e(criteria_note)) if criteria_note else ""}</p>
-<div class="p"><h2>단계별 깔때기</h2>{fhtml}<p class="lg">판단: 규모·수익성=TTM(최근 4분기 합), 성장=YoY(같은 분기 전년). 분기값은 누적 차감으로 환산. 기준: 거래대금≥{MIN_TRADING_KRW/1e8:.0f}억·부채비율&lt;{MAX_DEBT:.0f}%·매출성장≥{MIN_GROWTH_YOY:.0f}%·영업이익률(TTM)≥{MIN_OP_MARGIN:.0f}%·이익피크·원가율개선·TTM영업현금&gt;0</p></div>
+<div class="p"><h2>단계별 깔때기</h2>{fhtml}<p class="lg">판단: 규모·수익성=TTM(최근 4분기 합), 성장=YoY(같은 분기 전년). 분기값은 누적 차감으로 환산. 기준: 거래대금({TRADING_AVG_DAYS}일평균)≥{MIN_TRADING_KRW/1e8:.0f}억·부채비율&lt;{MAX_DEBT:.0f}%·매출성장≥{MIN_GROWTH_YOY:.0f}%·영업이익률(TTM)≥{MIN_OP_MARGIN:.0f}%·이익피크·원가율개선·TTM영업현금&gt;0</p></div>
 <div class="p"><h2>최종 후보</h2><div class="cards">{cards}</div></div>
-<div class="p"><h2>전체 {n}개사 (통과 멀리 간 순 · 시총순)</h2><table><thead><tr><th>회사</th><th>결과</th><th>현재가</th><th>영업이익률(TTM)</th><th>매출성장(YoY)</th><th>부채비율</th><th>PER</th><th>PBR</th><th>TTM매출</th><th>거래대금</th></tr></thead><tbody>{trs}</tbody></table><p class="lg"><span style="color:var(--ok)">초록</span>=기준통과 / <span style="color:var(--no)">빨강</span>=미달. 거래대금은 FDR 최근 거래일 기준.</p></div>
+<div class="p"><h2>전체 {n}개사 (통과 멀리 간 순 · 시총순)</h2><table><thead><tr><th>회사</th><th>결과</th><th>현재가</th><th>영업이익률(TTM)</th><th>매출성장(YoY)</th><th>부채비율</th><th>PER</th><th>PBR</th><th>TTM매출</th><th>거래대금</th></tr></thead><tbody>{trs}</tbody></table><p class="lg"><span style="color:var(--ok)">초록</span>=기준통과 / <span style="color:var(--no)">빨강</span>=미달. 거래대금은 FDR 최근 {TRADING_AVG_DAYS}거래일 평균(현재가·시총은 최근 거래일 종가).</p></div>
 </div></body></html>"""
 
 

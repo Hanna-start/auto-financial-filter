@@ -41,9 +41,14 @@ def save_snapshot(market, date, data):
         for tk, v in data.items():
             if not v or v.get("amount") is None:
                 continue
+            mc = v.get("marcap")
+            if mc is None:           # 시세만 갱신(미국 버튼 등): 같은 날 기존 시총을 지우지 않고 보존
+                ex = c.execute("SELECT marcap FROM market_cache WHERE market=? AND ticker=? AND date=?",
+                               (market, tk, date)).fetchone()
+                if ex and ex[0] is not None:
+                    mc = ex[0]
             c.execute("INSERT OR REPLACE INTO market_cache VALUES(?,?,?,?,?,?,?)",
-                      (market, tk, date, v.get("close"), v.get("amount"),
-                       v.get("marcap"), v.get("chg")))
+                      (market, tk, date, v.get("close"), v.get("amount"), mc, v.get("chg")))
             n += 1
     return n
 
@@ -56,9 +61,34 @@ def load_latest(market):
             "SELECT ticker, date, close, amount, marcap, chg FROM market_cache "
             "WHERE market=? ORDER BY date", (market,)).fetchall()
     for tk, date, close, amount, marcap, chg in rows:   # date 오름차순 → 뒤(최신)가 덮음
+        if marcap is None and tk in out:                # 시총 이월: 시세만 갱신된 최신 행의
+            marcap = out[tk]["marcap"]                   # 시총이 비면 직전 값 유지(US PER/PBR 결측 방지)
         out[tk] = {"close": close, "amount": amount, "marcap": marcap,
                    "chg": chg, "asof": date}
     return out
+
+
+def update_marcap(market, marcaps):
+    """종목별 '가장 최근 저장 행'의 marcap을 사후 보강한다(밸류에이션 표시용).
+
+    시총은 거래대금처럼 매일 일괄로 받지 않고 '통과 종목만' 사후 per-ticker 조회한다
+    (run_us_quarterly.fetch_marcaps). 그 값을 load_latest가 고르는 최신 행(= merge_with_cache가
+    방금 저장한 today 행, 없으면 직전 캐시 행)에 UPDATE로 채워 넣어, market_cache만 읽는
+    app.py에서도 미국 시총·PER/PBR이 뜨게 한다. marcaps={ticker: marcap}. 행이 없으면 skip."""
+    if not marcaps:
+        return 0
+    n = 0
+    with _conn() as c:
+        for tk, mc in marcaps.items():
+            if mc is None:
+                continue
+            row = c.execute("SELECT date FROM market_cache WHERE market=? AND ticker=? "
+                            "ORDER BY date DESC LIMIT 1", (market, tk)).fetchone()
+            if row:
+                c.execute("UPDATE market_cache SET marcap=? WHERE market=? AND ticker=? AND date=?",
+                          (mc, market, tk, row[0]))
+                n += 1
+    return n
 
 
 def merge_with_cache(market, live, price_date):

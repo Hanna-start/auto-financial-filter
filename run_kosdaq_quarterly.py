@@ -9,7 +9,7 @@
   - 주가·거래대금·시총 = FinanceDataReader('KOSDAQ')
   - 대상 명단·회사명·종목코드 = dart-audit-extractor/data/kosdaq_index.json
     (financials_q에 코스피·코스닥이 섞여 있어도 이 명단으로 코스닥만 분리)
-  - 기준은 코스피와 동일(원래 재무선배 엄격)
+  - 기준은 코스피와 동일(원래 엄격 기준)
 
 산출: 콘솔 리포트 + 코스닥_분기_결과_*.xlsx + dashboard_kosdaq.html
 사용: py run_kosdaq_quarterly.py

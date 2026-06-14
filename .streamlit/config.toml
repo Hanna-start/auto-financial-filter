@@ -1,0 +1,13 @@
+[theme]
+# 토스 스타일: 신뢰감 있는 블루 + 밝은 배경. 슬라이더·체크박스 등 위젯 강조색이 이 primaryColor를 따른다.
+primaryColor = "#3182F6"
+backgroundColor = "#F9FAFB"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#191F28"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
