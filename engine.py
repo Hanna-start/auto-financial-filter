@@ -132,6 +132,13 @@ def compute(d):
     if len(qk) < 4:
         return None
     last4 = qk[-4:]
+    # 연속성 가드: last4가 '실제로 인접한 4개 분기'일 때만 TTM(12개월)으로 인정한다.
+    # 상류 수집 결측으로 분기가 빠지면 qk[-4:]가 비연속이 되어 TTM이 12개월이 아닌
+    # 구간 합으로 오염되므로(예: 2024 Q3·Q4 + 2025 Q3·Q4), 그런 회사는 지표 산출에서 제외.
+    def _qidx(yq):
+        return yq[0] * 4 + (yq[1] - 1)
+    if any(_qidx(last4[i + 1]) - _qidx(last4[i]) != 1 for i in range(3)):
+        return None
 
     def ttm(key):
         vals = [q[k].get(key) for k in last4]
@@ -143,7 +150,7 @@ def compute(d):
         "fs": d["fs"], "n_q": len(qk), "latest_q": f"{qk[-1][0]} {qk[-1][1]}Q",
         "ttm_revenue": ttm_rev, "ttm_op": ttm_op, "ttm_ocf": ttm_ocf, "ttm_net": ttm_net,
         "equity": bs.get("equity"), "retained": bs.get("retained"),
-        "op_margin": (ttm_op / ttm_rev * 100) if (ttm_rev and ttm_op is not None) else None,
+        "op_margin": (ttm_op / ttm_rev * 100) if (ttm_rev is not None and ttm_rev > 0 and ttm_op is not None) else None,
         "debt_ratio": (bs["debt"] / bs["equity"] * 100) if (bs.get("equity") and bs.get("debt") is not None) else None,
         "bs_asof": bs.get("asof"),
         # 밸류에이션은 시총이 필요 → main 루프에서 add_valuation()이 채움
@@ -153,7 +160,7 @@ def compute(d):
     ly, lq = qk[-1]
     rn = q[qk[-1]].get("revenue")
     rp = q.get((ly - 1, lq), {}).get("revenue")
-    m["rev_yoy"] = ((rn - rp) / rp * 100) if (rp and rn is not None) else None
+    m["rev_yoy"] = ((rn - rp) / rp * 100) if (rp is not None and rp > 0 and rn is not None) else None
     # 이익 피크: 롤링 4분기 영업이익 합 중 최근이 최고
     sums = []
     for i in range(len(qk) - 3):

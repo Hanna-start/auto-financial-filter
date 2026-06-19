@@ -7,7 +7,7 @@
 재무가 아닌 '주가×거래량'만 필요하므로 yfinance bulk download로 수천 개를 빠르게 받는다.
 
 입력 : dart-audit-extractor/data/us_all_index.json (build_us_all_universe.py 산출, CIK·티커)
-거래대금 = 최근 10거래일 평균 달러거래대금(종가×거래량) — run_us_quarterly와 동일 산식.
+거래대금 = 최근 10거래일 평균 달러거래대금(종가×거래량). 선필터 전용 짧은 윈도우(최종 게이트 run_us_quarterly는 20거래일=TRADING_AVG_DAYS).
 통과 = 거래대금 ≥ $10M (MIN_TRADING_USD).
 출력 : data/us_liquid_index.json (EDGAR 수집 대상 = 유동성 통과 명단, 거래대금 내림차순)
        + 콘솔 요약 + us_유동성후보_<날짜>.csv (검토용)

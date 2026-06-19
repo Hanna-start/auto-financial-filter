@@ -29,7 +29,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 US_INDEX = "D:/Agent_Project/dart-audit-extractor/data/us_index.json"
 
 # 표시·이력창 별칭(단일 출처=engine.US_CRITERIA). 게이트는 screen(m, trading, US_CRITERIA).
-# 거래대금 $10M(≈100억원), 이력창 최근 20분기(=5년): EDGAR 17년+ 이력에서 '이익피크·원가율
+# 거래대금 $30M(≈400억원), 이력창 최근 20분기(=5년): EDGAR 17년+ 이력에서 '이익피크·원가율
 # 개선'을 한국과 동일 의미로 비교하려 최근 창으로 절단(2008년 대비 같은 무의미 비교 방지).
 MIN_TRADING_USD = US_CRITERIA.min_trading
 RECENT_QUARTERS = US_CRITERIA.recent_quarters

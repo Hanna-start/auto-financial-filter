@@ -15,7 +15,7 @@
 
 | 단계 | 한국(코스피·코스닥) | 미국 — 차이만 |
 |---|---|---|
-| ① 유동성 | 최근 10거래일 평균 거래대금 ≥ 100억원 | ≥ **$30M** |
+| ① 유동성 | 최근 20거래일 평균 거래대금 ≥ 100억원 | ≥ **$30M** |
 | ② 재무건전 | 부채비율 < 200% · 매출성장(YoY) ≥ 10% · TTM 영업현금 > 0 · 자본총계 > 0 | 자본총계 ≤ 0이어도 **이익잉여금 > 0이면 통과**(자사주매입 우량주) |
 | ③ 품질성장 | TTM 영업이익률 ≥ 10% · 이익피크(최근 4분기 영업이익=과거 최고) · 원가율 개선 | **원가율 개선 면제** · 피크 판정에 16분기↑ 이력 요구 · 이력 최근 20분기(5년)로 절단 |
 
@@ -57,6 +57,16 @@ legacy/                    옛 '연간' 프레임워크(미사용·보존)
 - **재무**: 한국 = DART, 미국 = SEC EDGAR companyfacts(us-gaap). `dart-audit-extractor`가 수집 → `screener.db`의 `financials_q`.
 - **시세**: 한국 = KRX 일별 데이터(FinanceDataReader 캐시, 최근 거래일로 walk-back), 미국 = yfinance bulk. 둘 다 `market_cache`로 폴백.
 - 키·승인 불필요(DART API 키는 수집기 측). 비율 기준이라 환율 무관 — 거래대금만 통화별 절대 기준(한국 100억원, 미국 $30M).
+
+## 다른 PC에서 돌리려면 (경로 전제)
+
+이 프로젝트는 **개인용**이며, 옆 프로젝트 `dart-audit-extractor`가 같은 디스크 위치(`D:/Agent_Project/...`)에 있다는 전제로 절대경로가 하드코딩돼 있습니다. 다른 환경에서 돌리려면 아래만 환경에 맞게 바꾸면 됩니다.
+
+- `engine.py` — `DB` (재무 DB = `dart-audit-extractor/screener.db`)
+- `app.py` — `DATA` (명단 json 폴더)
+- `run_*.py` · `screen_us_liquidity.py` — 각 `*_INDEX` / `DATA_DIR` (대상 명단 json 경로)
+
+`market_cache.db`는 이 폴더 기준 상대경로라 그대로 따라옵니다. 재무 DB(`screener.db`)는 읽기전용으로만 씁니다.
 
 ## 참고
 

@@ -81,9 +81,11 @@ def fetch_krx_marcap(market, avg_days=TRADING_AVG_DAYS, max_back=None):
     if latest is None:
         return {}, None
     out = {}
+    min_days = max(5, avg_days // 2)   # 미국 경로와 대칭: 윈도우 중 유효 거래일이 이만큼은 있어야 평균을 신뢰
     for code, v in latest.items():
         out[code] = {"close": v["close"],
-                     "amount": (amt_sum[code] / amt_cnt[code]) if amt_cnt.get(code) else None,
+                     # 단발 거래일(블록딜 등) 하루치가 곧 '평균'이 되는 것 방지 — 유효일 부족이면 None(유동성 미확인)
+                     "amount": (amt_sum[code] / amt_cnt[code]) if amt_cnt.get(code, 0) >= min_days else None,
                      "marcap": v["marcap"], "chg": v["chg"]}
     return out, price_date
 
