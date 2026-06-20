@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>재무 스크리너 — 프로젝트 이야기</title>
+<style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+
+:root{
+  --blue:#3182F6; --blue-d:#1B64DA; --ink:#191F28; --sub:#4E5968;
+  --mut:#8B95A1; --line:#F2F4F6; --bg:#F9FAFB; --card:#FFFFFF;
+  --ok:#2DB400; --no:#F04452; --soft:#EAF2FE;
+  --shadow:0 1px 4px rgba(0,0,0,.05); --shadow-h:0 8px 24px rgba(49,130,246,.12);
+  --r:20px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:'Pretendard',-apple-system,'Malgun Gothic',sans-serif;
+  line-height:1.65; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:860px; margin:0 auto; padding:0 22px}
+section{padding:54px 0; border-top:1px solid var(--line)}
+section:first-of-type{border-top:none}
+h2{font-size:13px; font-weight:800; letter-spacing:.08em; color:var(--blue);
+   text-transform:uppercase; margin:0 0 6px}
+h3{font-size:24px; font-weight:800; letter-spacing:-.4px; margin:0 0 18px; color:var(--ink)}
+p{color:var(--sub); margin:0 0 14px; font-size:15.5px}
+b,strong{color:var(--ink); font-weight:700}
+a{color:var(--blue); text-decoration:none}
+.lead{font-size:17px; color:var(--sub)}
+.mut{color:var(--mut)}
+.small{font-size:13px}
+
+/* ── HERO ── */
+.hero{background:linear-gradient(160deg,#0f1226 0%,#1a2350 55%,#23347a 100%);
+  color:#fff; padding:72px 0 60px; border:none}
+.hero .wrap{position:relative}
+.hero .eyebrow{font-size:13px; font-weight:700; letter-spacing:.1em;
+  color:#9db4ff; text-transform:uppercase; margin:0 0 14px}
+.hero h1{font-size:44px; line-height:1.15; font-weight:800; letter-spacing:-1px;
+  margin:0 0 16px; color:#fff}
+.hero h1 .em{color:#7fa7ff}
+.hero .tag{font-size:18px; color:#c7d2f0; margin:0 0 30px; max-width:620px}
+.hero .meta{display:flex; flex-wrap:wrap; gap:10px; margin-top:8px}
+.hero .pill{background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.16);
+  color:#dde6ff; font-size:13px; font-weight:600; padding:7px 14px; border-radius:999px;
+  backdrop-filter:blur(4px)}
+
+/* stat row */
+.stats{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-top:38px}
+.stat{background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.14);
+  border-radius:16px; padding:18px 16px; text-align:center}
+.stat .n{font-size:30px; font-weight:800; color:#fff; letter-spacing:-1px}
+.stat .l{font-size:12px; color:#aab8e6; margin-top:4px; font-weight:600}
+
+/* ── cards / grid ── */
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+.card{background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:22px 24px; box-shadow:var(--shadow); transition:transform .15s, box-shadow .15s}
+.card:hover{transform:translateY(-2px); box-shadow:var(--shadow-h)}
+.card h4{margin:0 0 8px; font-size:16.5px; font-weight:800; color:var(--ink)}
+.card p{font-size:14px; margin:0; color:var(--sub)}
+.kicker{display:inline-block; font-size:12px; font-weight:800; color:var(--blue);
+  background:var(--soft); padding:3px 10px; border-radius:8px; margin-bottom:10px}
+
+/* ── funnel ── */
+.market{background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:22px 24px; box-shadow:var(--shadow); margin-bottom:14px}
+.market .mh{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px}
+.market .mt{font-size:17px; font-weight:800}
+.market .mf{font-size:13px; color:var(--mut); font-weight:600}
+.market .mf b{color:var(--blue); font-size:20px; font-weight:800; margin-left:2px}
+.frow{display:flex; align-items:center; gap:12px; margin:7px 0}
+.flab{width:88px; font-size:12.5px; color:var(--sub); font-weight:600; flex-shrink:0; text-align:right}
+.ftrack{flex:1; background:#F1F4F8; border-radius:8px; height:30px; overflow:hidden; position:relative}
+.fbar{height:100%; border-radius:8px; display:flex; align-items:center; justify-content:flex-end;
+  padding-right:11px; color:#fff; font-size:13px; font-weight:800; min-width:42px;
+  background:linear-gradient(90deg,#7aa6ff,#3182F6)}
+.fbar.s0{background:linear-gradient(90deg,#aeb9c9,#8B95A1)}
+.fbar.fin{background:linear-gradient(90deg,#1f9d57,#2DB400)}
+
+/* ── criteria table ── */
+table{width:100%; border-collapse:collapse; font-size:14px; background:var(--card);
+  border:1px solid var(--line); border-radius:var(--r); overflow:hidden}
+th,td{padding:12px 14px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top}
+th{background:#FBFCFE; color:var(--mut); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.03em}
+tr:last-child td{border-bottom:none}
+td .c{font-weight:700; color:var(--ink)}
+.badge{display:inline-block; font-size:11px; font-weight:800; padding:2px 8px; border-radius:6px}
+.b-kr{background:#EAF2FE; color:var(--blue-d)}
+.b-us{background:#FFF1E8; color:#C2570F}
+.b-same{background:#EEF1F4; color:var(--mut)}
+
+/* ── timeline ── */
+.tl{position:relative; margin-left:8px; padding-left:30px}
+.tl::before{content:""; position:absolute; left:5px; top:6px; bottom:6px; width:2px; background:var(--line)}
+.ev{position:relative; margin-bottom:26px}
+.ev::before{content:""; position:absolute; left:-30px; top:4px; width:12px; height:12px;
+  border-radius:50%; background:var(--blue); border:3px solid #fff; box-shadow:0 0 0 2px var(--soft)}
+.ev.key::before{background:#2DB400; box-shadow:0 0 0 2px #E3F5DE}
+.ev .d{font-size:12.5px; font-weight:800; color:var(--blue); letter-spacing:.02em}
+.ev .t{font-size:16px; font-weight:800; margin:3px 0 5px}
+.ev p{font-size:14px; margin:0}
+.ev .hash{font-family:ui-monospace,Consolas,monospace; font-size:11px; color:var(--mut);
+  background:var(--bg); border:1px solid var(--line); padding:1px 6px; border-radius:5px; margin-left:6px}
+
+/* ── lesson / honest blocks ── */
+.lesson{border-left:3px solid var(--blue); background:#FBFCFE; border-radius:0 12px 12px 0;
+  padding:16px 20px; margin-bottom:14px}
+.lesson h4{margin:0 0 6px; font-size:15.5px; font-weight:800}
+.lesson p{margin:0; font-size:14px}
+.honest{border-left-color:#E8A33D; }
+.honest h4{color:#B5781C}
+
+/* ── arch ── */
+.arch{background:var(--card); border:1px solid var(--line); border-radius:var(--r);
+  padding:8px; box-shadow:var(--shadow)}
+.node{padding:13px 16px; border-radius:12px; margin:7px; font-size:14px}
+.node.core{background:linear-gradient(135deg,#EAF2FE,#DCE9FE); border:1px solid #C9DCFB}
+.node.core b{color:var(--blue-d)}
+.node.leaf{background:#FBFCFE; border:1px solid var(--line)}
+.archrow{display:grid; grid-template-columns:1fr 1fr; gap:0}
+.flowline{text-align:center; color:var(--mut); font-size:20px; margin:-2px 0}
+
+/* quote */
+.quote{background:linear-gradient(135deg,#EAF2FE,#F4F8FF); border:1px solid #D7E6FD;
+  border-radius:var(--r); padding:26px 28px; margin:4px 0}
+.quote p{font-size:17px; color:var(--ink); font-weight:600; margin:0; line-height:1.6}
+.quote .by{font-size:13px; color:var(--mut); margin-top:12px; font-weight:600}
+
+footer{padding:40px 0 60px; text-align:center; color:var(--mut); font-size:13px; border-top:1px solid var(--line)}
+footer b{color:var(--sub)}
+
+@media (max-width:680px){
+  .hero h1{font-size:32px}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+  .archrow{grid-template-columns:1fr}
+  .flab{width:64px; font-size:11px}
+}
+@media print{
+  body{background:#fff}
+  .hero{background:#1a2350 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .card:hover{transform:none; box-shadow:var(--shadow)}
+}
+</style>
+</head>
+<body>
+
+<!-- ════════ HERO ════════ -->
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">개인 프로젝트 기록 · 2026.06</p>
+    <h1>공개된 투자 기준을<br><span class="em">코드로 자동화</span>하기까지</h1>
+    <p class="tag">한국(코스피·코스닥)과 미국(S&amp;P500·전체 거래소)을 <b style="color:#fff">실제 재무 데이터</b>로
+      객관·일관 선별하는 종목 스크리너. 비개발자가 의사결정을 설계하고, 코드는 도구로 빌려 만든 2주의 기록.</p>
+    <div class="meta">
+      <span class="pill">📅 2026.06.05 → 06.19</span>
+      <span class="pill">🧩 21 커밋</span>
+      <span class="pill">🗂 4개 시장</span>
+      <span class="pill">📊 실데이터 (DART · SEC EDGAR)</span>
+      <span class="pill">🛠 Python · SQLite · Streamlit</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="n">15</div><div class="l">코스피 최종</div></div>
+      <div class="stat"><div class="n">17</div><div class="l">코스닥 최종</div></div>
+      <div class="stat"><div class="n">52</div><div class="l">미국 S&amp;P500</div></div>
+      <div class="stat"><div class="n">113</div><div class="l">미국 전체</div></div>
+    </div>
+  </div>
+</header>
+
+<!-- ════════ WHAT ════════ -->
+<section>
+  <div class="wrap">
+    <h2>무엇을 만들었나</h2>
+    <h3>"감(感)이 아니라 같은 잣대로" 거르는 스크리너</h3>
+    <p class="lead">공개된 펀더멘털 선별 기준 — 꾸준한 거래, 건전한 재무, 성장하는 매출, 흑자 현금흐름 —
+      을 <b>코드 한 곳</b>에 박아 두고, 수천 개 상장사를 <b>같은 기준으로 한 번에</b> 통과/탈락시킵니다.
+      사람이 종목마다 손으로 따지던 일을, 데이터가 매 거래일 자동으로 합니다.</p>
+    <div class="grid2" style="margin-top:22px">
+      <div class="card">
+        <span class="kicker">원칙 1</span>
+        <h4>실데이터만</h4>
+        <p>시작 단계에 있던 시뮬레이션·가짜 미국 경로를 전부 들어냈습니다. 한국은 <b>DART 분기 재무</b>,
+          미국은 <b>SEC EDGAR</b>. 추정·합성 없이 공시된 숫자만 씁니다.</p>
+      </div>
+      <div class="card">
+        <span class="kicker">원칙 2</span>
+        <h4>기준은 한 곳에</h4>
+        <p>모든 기준이 <b>engine.py</b> 한 파일에 모여 있습니다. 잣대를 바꾸려면 한 줄만 고치면
+          네 시장에 똑같이 반영됩니다.</p>
+      </div>
+      <div class="card">
+        <span class="kicker">원칙 3</span>
+        <h4>계절성 보정</h4>
+        <p>규모·수익성은 <b>TTM</b>(최근 4분기 합), 성장은 <b>YoY</b>(같은 분기 전년 대비).
+          분기값은 누적에서 차감해 순수 3개월로 환산합니다.</p>
+      </div>
+      <div class="card">
+        <span class="kicker">원칙 4</span>
+        <h4>표시와 판정의 분리</h4>
+        <p>PER·PBR 같은 밸류에이션은 <b>참고용 표시</b>일 뿐 선별 기준이 아닙니다.
+          backward-looking 도구임을 분명히 하고, 미래 판단은 사람 몫으로 남깁니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ FUNNEL ════════ -->
+<section>
+  <div class="wrap">
+    <h2>3단계 깔때기 · 결과</h2>
+    <h3>대상 → ① 유동성 → ② 재무건전 → ③ 최종</h3>
+    <p>약 <b>5,000개 상장사</b>(중복 제외)를 훑어, 한국 <b>32개</b>·미국 <b>113개</b>가 모든 관문을 통과했습니다
+      <span class="small mut">(미국 S&amp;P500 52개는 전체 113개에 포함)</span>.
+      대부분은 ① 유동성(거래가 얇음)에서 걸러집니다 — 부실해서가 아니라 거래가 적은 소형주라서입니다.
+      <span class="small mut">(주가 2026-06-19 기준 · 거래대금 = 최근 20거래일 평균)</span></p>
+
+    <div class="market">
+      <div class="mh"><span class="mt">🇰🇷 코스피</span><span class="mf">최종 <b>15</b></span></div>
+      <div class="frow"><span class="flab">대상</span><div class="ftrack"><div class="fbar s0" style="width:100%">835</div></div></div>
+      <div class="frow"><span class="flab">① 유동성</span><div class="ftrack"><div class="fbar" style="width:24.3%">203</div></div></div>
+      <div class="frow"><span class="flab">② 재무건전</span><div class="ftrack"><div class="fbar" style="width:8%">48</div></div></div>
+      <div class="frow"><span class="flab">③ 최종</span><div class="ftrack"><div class="fbar fin" style="width:6%">15</div></div></div>
+    </div>
+
+    <div class="market">
+      <div class="mh"><span class="mt">🇰🇷 코스닥</span><span class="mf">최종 <b>17</b></span></div>
+      <div class="frow"><span class="flab">대상</span><div class="ftrack"><div class="fbar s0" style="width:100%">1,816</div></div></div>
+      <div class="frow"><span class="flab">① 유동성</span><div class="ftrack"><div class="fbar" style="width:9.3%">169</div></div></div>
+      <div class="frow"><span class="flab">② 재무건전</span><div class="ftrack"><div class="fbar" style="width:6%">58</div></div></div>
+      <div class="frow"><span class="flab">③ 최종</span><div class="ftrack"><div class="fbar fin" style="width:6%">17</div></div></div>
+    </div>
+
+    <div class="market">
+      <div class="mh"><span class="mt">🇺🇸 미국 S&amp;P500</span><span class="mf">최종 <b>52</b></span></div>
+      <div class="frow"><span class="flab">대상</span><div class="ftrack"><div class="fbar s0" style="width:100%">499</div></div></div>
+      <div class="frow"><span class="flab">① 유동성</span><div class="ftrack"><div class="fbar" style="width:100%">499</div></div></div>
+      <div class="frow"><span class="flab">② 재무건전</span><div class="ftrack"><div class="fbar" style="width:21.4%">107</div></div></div>
+      <div class="frow"><span class="flab">③ 최종</span><div class="ftrack"><div class="fbar fin" style="width:10.4%">52</div></div></div>
+    </div>
+
+    <div class="market">
+      <div class="mh"><span class="mt">🇺🇸 미국 전체 (거래소 상장)</span><span class="mf">최종 <b>113</b></span></div>
+      <div class="frow"><span class="flab">대상</span><div class="ftrack"><div class="fbar s0" style="width:100%">2,343</div></div></div>
+      <div class="frow"><span class="flab">① 유동성</span><div class="ftrack"><div class="fbar" style="width:72.2%">1,692</div></div></div>
+      <div class="frow"><span class="flab">② 재무건전</span><div class="ftrack"><div class="fbar" style="width:14.8%">346</div></div></div>
+      <div class="frow"><span class="flab">③ 최종</span><div class="ftrack"><div class="fbar fin" style="width:6%">113</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ CRITERIA ════════ -->
+<section>
+  <div class="wrap">
+    <h2>선별 기준</h2>
+    <h3>7개 조건 + 자본 게이트 (모두 AND)</h3>
+    <p>한국은 원래의 엄격한 기준 그대로, 미국은 시장 특성에 맞춰 일부만 조정한
+      <b>한·미 이원화</b> 구조입니다. 비율 기준이라 환율과 무관하고, 거래대금만 통화별 절대 기준을 씁니다.</p>
+    <table>
+      <thead><tr><th style="width:42px">#</th><th>기준</th><th style="width:130px">한국</th><th style="width:170px">미국 — 차이만</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><span class="c">거래대금</span> (최근 20거래일 평균)</td><td><span class="badge b-kr">≥ 100억원</span></td><td><span class="badge b-us">≥ $30M</span></td></tr>
+        <tr><td>2</td><td><span class="c">부채비율</span> (총부채/총자본)</td><td><span class="badge b-same">&lt; 200%</span></td><td><span class="badge b-same">동일</span></td></tr>
+        <tr><td>3</td><td><span class="c">매출성장</span> (YoY, 같은 분기 전년)</td><td><span class="badge b-same">≥ 10%</span></td><td><span class="badge b-same">동일</span></td></tr>
+        <tr><td>4</td><td><span class="c">TTM 영업현금흐름</span></td><td><span class="badge b-same">&gt; 0</span></td><td><span class="badge b-same">동일</span></td></tr>
+        <tr><td>5</td><td><span class="c">TTM 영업이익률</span></td><td><span class="badge b-same">≥ 10%</span></td><td><span class="badge b-same">동일</span></td></tr>
+        <tr><td>6</td><td><span class="c">이익 피크</span> (최근 4분기 영업이익 = 보유 이력 최고)</td><td><span class="badge b-kr">충족</span></td><td><span class="badge b-us">+ 16분기 이력</span></td></tr>
+        <tr><td>7</td><td><span class="c">원가율 개선</span> (최근 원가율 ≤ 과거)</td><td><span class="badge b-kr">충족</span></td><td><span class="badge b-us">면제</span></td></tr>
+        <tr><td>＋</td><td><span class="c">자본 게이트</span> (자본잠식 차단)</td><td><span class="badge b-kr">자본 &gt; 0</span></td><td><span class="badge b-us">또는 이익잉여금&gt;0</span></td></tr>
+      </tbody>
+    </table>
+    <p class="small mut" style="margin-top:14px">미국이 다른 4가지: ① 대형주 위주라 유동성 상향 · ⑥ EDGAR 이력 완결성이 제각각이라 짧은 이력의 거짓 피크 차단 ·
+      ⑦ 소프트웨어 비중이 커 원가율 신호가 무의미 · ＋ 자사주매입으로 자본이 음수가 된 우량주(맥도날드류)는 이익잉여금이 양수면 구제.</p>
+  </div>
+</section>
+
+<!-- ════════ JOURNEY ════════ -->
+<section>
+  <div class="wrap">
+    <h2>여정</h2>
+    <h3>2주 동안 일어난 일</h3>
+    <div class="tl">
+      <div class="ev key">
+        <div class="d">06.05 <span class="hash">d3bfdbf · 4d73632</span></div>
+        <div class="t">방향 확정 — "실데이터만"</div>
+        <p>초기에 섞여 있던 가짜 재무 생성기·가짜 미국 경로·위조 시뮬을 전부 들어내고, 한국 실데이터 전용으로 베이스라인을 다시 깔았습니다. 출발점에서 내린 가장 중요한 결정.</p>
+      </div>
+      <div class="ev">
+        <div class="d">06.06 <span class="hash">d370b39</span></div>
+        <div class="t">코스피 분기 스크리너</div>
+        <p>DART 분기 재무를 TTM·YoY로 판단하는 본 엔진 완성. 첫 결과: 835개사 → 최종 15개. 삼성·SK하이닉스의 매출 급등은 실제 메모리 업황으로, 누적차감 환산이 정확하다는 방증이었습니다.</p>
+      </div>
+      <div class="ev key">
+        <div class="d">06.08 <span class="hash">1109ca8</span></div>
+        <div class="t">미국 진출 + 전체 거래소로 확장</div>
+        <p>SEC EDGAR로 미국 S&amp;P500을 붙이고, 곧바로 S&amp;P500 밖 전체 거래소로 확장. "7천 개를 다 받지 말고, 거래대금으로 먼저 거른 뒤 수집"하는 <b>순서 역전</b> 전략으로 수집 대상을 줄였습니다. 시세 캐시와 자본 게이트도 이때.</p>
+      </div>
+      <div class="ev key">
+        <div class="d">06.09 <span class="hash">6871474</span></div>
+        <div class="t">engine.py 추출 + 한·미 기준 이원화</div>
+        <p>중복되던 기준을 <b>engine.py 단일 출처</b>로 모으고, 한국은 원본 그대로 두되 미국만 시장 특성에 맞춰 프로파일을 분리. 폴더도 살아있는 시스템과 legacy로 정리했습니다.</p>
+      </div>
+      <div class="ev">
+        <div class="d">06.10 <span class="hash">f1543dd</span></div>
+        <div class="t">버그 사냥</div>
+        <p>시세 캐시가 빈 거래대금을 '최신'으로 덮어 폴백을 무력화하던 오염 버그 수정. 음수자본 종목의 부채비율 표시도 정리(판정은 그대로). 다각도 리뷰로 오탐도 걸러냈습니다.</p>
+      </div>
+      <div class="ev">
+        <div class="d">06.11 <span class="hash">6215fe4</span></div>
+        <div class="t">코스닥 전량 + 인터랙티브 앱</div>
+        <p>코스닥 1,816개 전 종목 적재 완료. 그리고 정적 대시보드를 넘어, <b>기준을 슬라이더로 직접 움직이며</b> 통과 종목이 실시간으로 바뀌는 독립 창 앱(Streamlit + pywebview)을 완성했습니다.</p>
+      </div>
+      <div class="ev">
+        <div class="d">06.15 <span class="hash">135bb55</span></div>
+        <div class="t">관례에 맞춘 정교화</div>
+        <p>거래대금을 하루치에서 <b>최근 20거래일 평균</b>(업계 표준)으로, 시세는 거래일 단위 EOD 갱신으로. 미국 시총 결측도 보강해 PER/PBR이 제대로 뜨게 했습니다.</p>
+      </div>
+      <div class="ev key">
+        <div class="d">06.19 <span class="hash">bb1ea5f</span></div>
+        <div class="t">전체 리뷰 후 마무리</div>
+        <p>멀티에이전트로 코드를 4관점에서 훑고 각 발견을 적대적으로 재검증(17건 중 14 확정). 비연속 TTM·음수 분모·거래대금 가드 등 외과적 수정 5종을 적용하고 닫았습니다. <b>"지금 멈춰도 된다"</b>는 판단까지가 마무리.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ LESSONS ════════ -->
+<section>
+  <div class="wrap">
+    <h2>데이터와 씨름하며 배운 것</h2>
+    <h3>진짜 어려움은 기준이 아니라 데이터였다</h3>
+    <div class="lesson">
+      <h4>① DART의 '3개월 vs 누적' 함정</h4>
+      <p>분기 보고서는 누적값으로 옵니다(반기·9개월·연간). 순수 분기를 얻으려면 차감해야 합니다 —
+        2분기 = 반기 − 1분기, 4분기 = 연간 − 9개월. 게다가 연간 보고서는 전체값이 '값' 칸에 들어가는 등
+        칸마다 규칙이 달라, 이걸 잘못 읽으면 모든 숫자가 4배로 부풀려집니다.</p>
+    </div>
+    <div class="lesson">
+      <h4>② EDGAR는 회사마다 다른 언어를 쓴다</h4>
+      <p>미국은 같은 '매출'도 회사마다 태그가 제각각입니다(<code>Revenues</code> ↔ <code>RevenueFromContract…</code>).
+        폴백 매핑으로 번역해 한국과 같은 칸에 넣어야 엔진을 그대로 재사용할 수 있었습니다.
+        또 EDGAR는 17년 이력을 주는데, '이익 피크'를 2008년과 비교하면 무의미해져 <b>최근 5년으로 잘라</b> 한국과 의미를 맞췄습니다.</p>
+    </div>
+    <div class="lesson">
+      <h4>③ "거래대금은 매일 크게 안 변한다" — 폴백의 철학</h4>
+      <p>시세 소스가 일시 장애를 일으키면 거래대금이 통째로 비어 전 종목이 1단계에서 탈락합니다.
+        그래서 시세를 날짜별로 캐시하고, 빈 값은 저장하지 않아 <b>직전 정상값을 보존</b>합니다.
+        폴백한 값은 as-of 날짜를 함께 보여줘 정직하게 표시합니다.</p>
+    </div>
+    <div class="lesson">
+      <h4>④ 마지막 리뷰가 잡아낸 것들</h4>
+      <p>분기가 빠진 회사의 '비연속 4분기'를 TTM으로 오인하던 빈틈, 음수 매출에서 부호가 뒤집히던 비율,
+        한 번만 거래된 종목이 유동성을 거짓 통과하던 허점 — 치명적이진 않았지만 모두 실제로 존재했고, 닫기 전에 고쳤습니다.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ ARCHITECTURE ════════ -->
+<section>
+  <div class="wrap">
+    <h2>구조</h2>
+    <h3>하나의 엔진, 네 개의 진입점</h3>
+    <p>모든 시장이 같은 코어를 공유합니다. 시장별 파일은 시세 출처·통화·거래대금 기준만 각자 두고, 나머지는 전부 엔진을 빌려 씁니다.</p>
+    <div class="arch">
+      <div class="node core"><b>engine.py</b> — 공유 엔진 · 기준의 단일 출처<br>
+        <span class="small mut">재무 적재 · 누적차감 분기환산 · TTM/YoY · 지표 계산 · 3단계 게이트 · KR/US 프로파일</span></div>
+      <div class="flowline">↓ import</div>
+      <div class="archrow">
+        <div class="node leaf">📈 <b>run_kospi / kosdaq</b><br><span class="small mut">+ KRX 시세 · 대시보드 렌더</span></div>
+        <div class="node leaf">📈 <b>run_us / us_all</b><br><span class="small mut">+ yfinance 시세 · 시총 보강</span></div>
+      </div>
+      <div class="archrow">
+        <div class="node leaf">💾 <b>market_cache</b><br><span class="small mut">시세 캐시 · 실패 시 직전값 폴백</span></div>
+        <div class="node leaf">🖥 <b>app · launch</b><br><span class="small mut">슬라이더 실시간 재스크리닝 · 독립 창</span></div>
+      </div>
+    </div>
+    <p class="small mut" style="margin-top:14px">재무는 옆 프로젝트(<code>dart-audit-extractor</code>)가 DART·EDGAR에서 수집해 SQLite에 적재하고,
+      이 프로젝트는 그걸 읽기 전용으로 스크리닝합니다. 산출물은 공유용 대시보드 HTML + 엑셀.</p>
+  </div>
+</section>
+
+<!-- ════════ HONEST / LIMITS ════════ -->
+<section>
+  <div class="wrap">
+    <h2>막다른 길과 한계 — 정직하게</h2>
+    <h3>안 된 것, 일부러 안 한 것</h3>
+    <div class="lesson honest">
+      <h4>토스증권 API 트랙은 종결</h4>
+      <p>위험회사 배지를 게이트로 쓰려 했지만, <b>재무 7기준을 통과한 회사는 위험회사일 확률이 사실상 0</b>이라
+        추가 가치가 없다고 결론. 유일하게 실효 있던 미국 시총 결측은 yfinance 쪽으로 따로 해결했습니다.</p>
+    </div>
+    <div class="lesson honest">
+      <h4>모멘텀(주가 추세) 단계는 보류</h4>
+      <p>주가 추세는 증명되지 않은 휴리스틱이라 펀더멘털과 성격이 다릅니다. 이 스크리너는
+        <b>backward-looking</b>임을 분명히 하고, 밸류 트랩·해자 위협 같은 미래 판단은 사람의 몫으로 남겼습니다.</p>
+    </div>
+    <div class="lesson honest">
+      <h4>하드코딩 경로 · 테스트 부재</h4>
+      <p>개인용이라 절대경로가 박혀 있고 옆 프로젝트에 강결합돼 있습니다. 자동화 테스트도 아직 없습니다.
+        <b>"공유용이 아니라 개인용"이라는 전제 위에서는 결함이 아니라 선택</b>이며, README에 그 전제를 명시해 두었습니다.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ COLLAB / HUMAN ════════ -->
+<section>
+  <div class="wrap">
+    <h2>일하는 방식</h2>
+    <h3>판단은 사람, 도구는 코드</h3>
+    <p>이 프로젝트의 핵심은 기술이 아니라 <b>의사결정의 설계</b>였습니다. "무엇이 필요한가",
+      "어디까지가 충분한가", "이 한계를 받아들일 것인가"를 사람이 정하고, 코드·데이터·구조화를 도구로 빌렸습니다.
+      비개발자가 실데이터 제품을 끝까지 만들 수 있었던 이유.</p>
+    <div class="quote">
+      <p>"지표는 과거를 본다. 어도비가 최종 후보라도, AI가 해자를 위협하는 미래까지 숫자가 말해주진 않는다 —
+        그 판단은 내 몫이다."</p>
+      <div class="by">— 스크리너의 한계를 스스로 짚은 기록 중에서</div>
+    </div>
+    <p style="margin-top:18px">규칙도 분명했습니다. 계획을 먼저 글로 제시하고 승인받은 뒤 실행할 것,
+      되돌릴 수 있게 바꿀 것, 사탕발림 없이 정직하게 검증할 것, 요청 범위 밖으로 손대지 말 것.
+      마지막 리뷰에서 "<b>고칠 건 고치되, 지금 멈춰도 된다</b>"는 결론을 내린 것도 그 방식의 일부였습니다.</p>
+  </div>
+</section>
+
+<!-- ════════ CLOSE ════════ -->
+<section>
+  <div class="wrap">
+    <h2>닫으며</h2>
+    <h3>여기서 마무리, 그러나 언제든 다시 열 수 있게</h3>
+    <p>네 시장이 모두 돌고, 오프라인 캐시와 실시간 탐색 앱까지 갖췄습니다. 기준은 한 줄로 바꿀 수 있고,
+      재무는 분기마다·시세는 매 거래일 갱신됩니다. 더 다듬을 여지는 늘 있지만,
+      <b>개인 의사결정 보조 도구로서는 충분히 완결</b>됐습니다.</p>
+    <p>다음에 열고 싶다면: 이익피크·영업현금 토글, 보유 종목 오버레이, 그리고 — 남에게 보일 거라면 —
+      핵심 계산에 대한 테스트 몇 개. 하지만 그건 그때의 선택입니다. 지금은, 드디어, 마무리.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p><b>재무 스크리너</b> · 개인 프로젝트 기록 · 2026.06.05 → 06.19 · 21 커밋<br>
+    Python · SQLite · Streamlit · DART · SEC EDGAR · FinanceDataReader · yfinance<br>
+    <span class="mut" style="font-size:12px">이 문서는 프로젝트의 과정과 내용을 남기기 위해 작성되었습니다. 수치는 주가 2026-06-19 기준.</span></p>
+  </div>
+</footer>
+
+</body>
+</html>
